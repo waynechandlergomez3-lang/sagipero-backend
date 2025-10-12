@@ -16,7 +16,7 @@ model Article {
   imageUrl    String?
   source      String?
   createdAt   DateTime @default(now())
-  updatedAt   DateTime @default(now())
+  updatedAt   DateTime
 }
 
 model CommonAllergy {
@@ -50,6 +50,7 @@ model Emergency {
   priority                         Int               @default(1)
   resolvedAt                       DateTime?
   responseNotes                    String?
+  responderLocation                Json?
   EvacuationCenter                 EvacuationCenter? @relation(fields: [evacuationId], references: [id])
   User_Emergency_responderIdToUser User?             @relation("Emergency_responderIdToUser", fields: [responderId], references: [id])
   User_Emergency_userIdToUser      User              @relation("Emergency_userIdToUser", fields: [userId], references: [id])
@@ -139,6 +140,8 @@ model User {
   emergencyContactName                  String?
   emergencyContactPhone                 String?
   emergencyContactRelation              String?
+  barangay                              String?
+  responderStatus                       ResponderStatus?      @default(AVAILABLE)
   Emergency_Emergency_responderIdToUser Emergency[]           @relation("Emergency_responderIdToUser")
   Emergency_Emergency_userIdToUser      Emergency[]           @relation("Emergency_userIdToUser")
   Location                              Location?
@@ -160,18 +163,22 @@ model UserDocument {
 }
 
 model WeatherAlert {
-  id          String    @id
-  type        String
-  severity    String
-  title       String
-  description String
-  source      String
-  location    Json
-  startsAt    DateTime
-  endsAt      DateTime?
-  isActive    Boolean   @default(true)
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime
+  id            String    @id
+  type          String
+  severity      String
+  title         String
+  description   String
+  source        String
+  location      Json
+  startsAt      DateTime
+  endsAt        DateTime?
+  isActive      Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime
+  area          Json?
+  daily         Boolean   @default(false)
+  hourlyIndexes Json?     @default("[]")
+  message       String?
 }
 
 enum EmergencyStatus {
@@ -179,6 +186,15 @@ enum EmergencyStatus {
   ACKNOWLEDGED
   IN_PROGRESS
   RESOLVED
+  ACCEPTED
+  ARRIVED
+}
+
+enum ResponderStatus {
+  AVAILABLE
+  ON_DUTY
+  VEHICLE_UNAVAILABLE
+  OFFLINE
 }
 
 enum SituationStatus {
