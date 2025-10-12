@@ -61,13 +61,14 @@ model Emergency {
 }
 
 model EmergencyHistory {
-  id          String   @id
-  emergencyId String
-  eventType   String
+  id          String   @id @default(dbgenerated("gen_random_uuid()"))
+  emergencyId String   @map("emergency_id")
+  eventType   String   @map("event_type")
   payload     Json?
-  createdAt   DateTime @default(now())
+  createdAt   DateTime @default(now()) @map("created_at")
 
   @@index([emergencyId])
+  @@map("emergency_history")
 }
 
 model EmergencyHotline {

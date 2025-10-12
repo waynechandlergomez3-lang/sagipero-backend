@@ -4,19 +4,39 @@
 
 const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
 
+// Debug function to check what we're actually sending
+async function debugRequest(endpoint, options = {}) {
+  console.log('🔍 DEBUG REQUEST:');
+  console.log('  Endpoint:', `${API}${endpoint}`);
+  console.log('  Headers:', JSON.stringify(options.headers, null, 2));
+  console.log('  Method:', options.method || 'GET');
+  console.log('  Body:', options.body ? options.body.substring(0, 100) + '...' : 'none');
+}
+
 // Production API URL
 const API = 'https://sagipero-backend-production.up.railway.app/api';
 
 // Utility functions
 async function makeRequest(endpoint, options = {}) {
   try {
-    const response = await fetch(`${API}${endpoint}`, {
+    // Ensure Content-Type is explicitly set for requests with body
+    const requestOptions = {
+      ...options,
       headers: {
         'Content-Type': 'application/json',
         ...options.headers
-      },
-      ...options
-    });
+      }
+    };
+    
+    // Debug what we're sending
+    if (options.body) {
+      console.log('🔍 Request Debug:');
+      console.log('  Content-Type:', requestOptions.headers['Content-Type']);
+      console.log('  Body type:', typeof options.body);
+      console.log('  Body preview:', options.body.substring(0, 50) + '...');
+    }
+    
+    const response = await fetch(`${API}${endpoint}`, requestOptions);
     
     const data = await response.json().catch(() => ({ error: 'Invalid JSON response' }));
     
