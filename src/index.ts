@@ -2,7 +2,6 @@ import express from 'express';
 import cors from 'cors';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
-// Import PrismaClient from generated client because generator output is configured to ../src/generated/prisma
 import { PrismaClient } from './generated/prisma';
 import dotenv from 'dotenv';
 import userRoutes from './routes/userRoutes';
