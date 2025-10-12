@@ -6,7 +6,7 @@ console.log('==========================================');
 console.log('');
 console.log('Add these to your Railway service variables:');
 console.log('');
-console.log('DATABASE_URL=postgresql://postgres.vsrvdgzvyhlpnnvktuwn:Sagipero081@aws-1-us-east-2.pooler.supabase.com:5432/postgres');
+console.log('DATABASE_URL=postgresql://postgres.vsrvdgzvyhlpnnvktuwn:Sagipero081@aws-1-us-east-2.pooler.supabase.com:6543/postgres');
 console.log('JWT_SECRET=a1fef9d66b662260094f4b85a879af9823b1b7479224aa80f84c8c5a40ffb9a5');
 console.log('NODE_ENV=production');
 console.log('PORT=8080');
