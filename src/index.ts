@@ -42,8 +42,14 @@ app.use((req, _res, next) => {
       console.log('Body:', JSON.stringify(req.body, null, 2));
     }
   } else {
-    // Minimal logging in production
+    // Enhanced logging in production for debugging
     console.log(`[${new Date().toISOString()}] ${req.method} ${req.originalUrl}`);
+    console.log('Content-Type:', req.headers['content-type']);
+    console.log('Body status:', req.body ? 'Present' : 'UNDEFINED');
+    if (req.body) {
+      console.log('Body keys:', Object.keys(req.body));
+      console.log('Body content:', JSON.stringify(req.body));
+    }
   }
   next();
 });
