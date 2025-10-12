@@ -25,6 +25,14 @@ const corsOptions = {
     ? [
         process.env.APP_BASE_URL || '',
         'https://your-admin-web-domain.vercel.app', // Update with your admin web domain
+        'https://sagipero-admin.vercel.app', // Allow Vercel deployment
+        'https://sagipero-admin.netlify.app', // Allow Netlify deployment
+        'http://localhost:3000', // Allow local Vite dev server
+        'http://localhost:4173', // Allow Vite preview server
+        'http://localhost:5173', // Allow default Vite dev server
+        'http://127.0.0.1:3000', // Allow localhost variants
+        'http://127.0.0.1:4173',
+        'http://127.0.0.1:5173',
         'exp://192.168.1.1:8081' // Allow Expo dev client, update IP as needed
       ].filter(url => url && url.length > 0)
     : '*', // Allow all origins in development
