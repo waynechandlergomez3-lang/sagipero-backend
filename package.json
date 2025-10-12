@@ -1,0 +1,52 @@
+{
+    "name": "backend",
+    "version": "1.0.0",
+    "main": "index.js",
+    "scripts": {
+        "predev": "npm run local-ip",
+        "start": "node dist/index.js",
+        "start:prod": "NODE_ENV=production node dist/index.js",
+        "build": "tsc",
+        "dev": "ts-node-dev --respawn src/index.ts",
+        "local-ip": "node scripts/updateLocalIP.js",
+        "seed": "ts-node prisma/seed.ts",
+        "setup-production-db": "node scripts/setupProductionDB.js",
+        "clean-production-setup": "node scripts/cleanProductionSetup.js",
+        "generate-jwt": "node scripts/generateJWTSecret.js"
+    },
+    "keywords": [],
+    "author": "",
+    "license": "ISC",
+    "description": "",
+    "devDependencies": {
+        "@types/express": "^5.0.3",
+        "@types/jsonwebtoken": "^9.0.10",
+        "@types/node": "^24.3.0",
+        "nodemon": "^3.1.10",
+        "prisma": "^6.15.0",
+        "socket.io-client": "^4.8.1",
+        "ts-node": "^10.9.2",
+        "typescript": "^5.9.2"
+    },
+    "dependencies": {
+        "@aws-sdk/client-s3": "^3.523.0",
+        "@aws-sdk/lib-storage": "^3.523.0",
+        "@prisma/client": "^6.15.0",
+        "@types/bcryptjs": "^3.0.0",
+        "@types/cors": "^2.8.19",
+        "@types/multer": "^1.4.11",
+        "@types/pg": "^8.15.5",
+        "bcryptjs": "^3.0.2",
+        "cors": "^2.8.5",
+        "dotenv": "^17.2.1",
+        "expo-server-sdk": "^3.15.0",
+        "express": "^5.1.0",
+        "express-validator": "^7.2.1",
+        "jsonwebtoken": "^9.0.2",
+        "multer": "^1.4.5-lts.1",
+        "node-fetch": "^2.7.0",
+        "pg": "^8.16.3",
+        "socket.io": "^4.8.1",
+        "ts-node-dev": "^2.0.0"
+    }
+}

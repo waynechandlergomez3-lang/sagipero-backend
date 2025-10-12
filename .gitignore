@@ -1,0 +1,43 @@
+# Dependencies
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Production build
+dist/
+build/
+
+# Environment variables (keep .env.production as template)
+.env
+.env.local
+.env.development.local
+.env.test.local
+
+# Generated Prisma client
+/src/generated/prisma
+
+# Logs
+logs
+*.log
+
+# Uploads directory (user uploaded files)
+uploads/
+
+# Temporary files
+temp/
+tmp/
+*.tmp
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# Local development files
+local-ip.txt
+scripts/temp_migration.sql
