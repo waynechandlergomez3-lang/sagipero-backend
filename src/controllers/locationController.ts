@@ -2,6 +2,7 @@ import { Response } from 'express';
 import { prisma } from '../index';
 import { AuthRequest } from '../types/custom';
 import { getIO } from '../realtime';
+import { randomUUID } from 'crypto';
 
 export const updateLocation = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
@@ -15,7 +16,7 @@ export const updateLocation = async (req: AuthRequest, res: Response): Promise<v
     const loc = await prisma.location.upsert({
       where: { userId },
       update: { latitude: Number(latitude), longitude: Number(longitude) },
-      create: { userId, latitude: Number(latitude), longitude: Number(longitude) }
+      create: { id: randomUUID(), userId, latitude: Number(latitude), longitude: Number(longitude), updatedAt: new Date() }
     });
 
     // Emit location change

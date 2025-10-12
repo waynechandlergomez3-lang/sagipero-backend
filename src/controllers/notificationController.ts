@@ -55,7 +55,7 @@ export const createNotification = async (req: AuthRequest, res: Response): Promi
 
     const notif = await prisma.notification.create({
       data: {
-        user: { connect: { id: userId } },
+        userId: userId ,
         type: type || 'SYSTEM',
         title,
         message,

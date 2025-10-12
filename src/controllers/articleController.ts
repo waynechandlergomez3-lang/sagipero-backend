@@ -1,6 +1,7 @@
 import { Request, Response } from 'express'
 import { prisma } from '../index'
 import axios from 'axios'
+import { randomUUID } from 'crypto'
 
 // Simple HTML meta extractor (no new deps)
 function extractMeta(html: string) {
@@ -30,11 +31,13 @@ export const createArticle = async (req: Request, res: Response) => {
     try { source = (new URL(url)).hostname } catch(e) { /* ignore */ }
 
     const art = await prisma.article.create({ data: {
+      id: randomUUID(),
       url,
       title: meta.title || url,
       description: meta.description || '',
       imageUrl: meta.image || null,
-      source: source || null
+      source: source || null,
+      updatedAt: new Date()
     } })
 
     return res.json(art)

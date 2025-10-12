@@ -3,6 +3,7 @@ import { PrismaClient, UserRole, ResponderStatus } from '../generated/prisma';
 import bcrypt from 'bcryptjs';
 import { generateToken } from '../utils/jwt';
 import { AuthRequest } from '../types/custom';
+import { randomUUID } from 'crypto';
 
 const prisma = new PrismaClient();
 
@@ -23,6 +24,7 @@ export const signup = async (req: AuthRequest, res: Response): Promise<void> => 
 
     const user = await prisma.user.create({
       data: {
+        id: randomUUID(),
         email,
         password: hashedPassword,
         name,
@@ -32,7 +34,8 @@ export const signup = async (req: AuthRequest, res: Response): Promise<void> => 
         barangay,
         specialCircumstances: ['NONE'],
         medicalConditions: [],
-        allergies: []
+        allergies: [],
+        updatedAt: new Date()
       },
       select: {
         id: true,
@@ -104,6 +107,7 @@ export const createUserByAdmin = async (req: AuthRequest, res: Response): Promis
 
       const user = await prisma.user.create({
       data: {
+        id: randomUUID(),
         name,
         email,
         phone,
@@ -119,6 +123,7 @@ export const createUserByAdmin = async (req: AuthRequest, res: Response): Promis
   medicalConditions: medicalConditions || [],
   allergies: allergies || [],
   specialCircumstances: (specialCircumstances && specialCircumstances.length>0) ? specialCircumstances : ['NONE'],
+        updatedAt: new Date()
       }
     });
 
@@ -188,7 +193,7 @@ export const getProfile = async (req: AuthRequest, res: Response): Promise<void>
         phone: true,
   address: true,
   barangay: true,
-        location: {
+        Location: {
           select: {
             latitude: true,
             longitude: true,
@@ -258,7 +263,7 @@ export const updateProfile = async (req: AuthRequest, res: Response): Promise<vo
         phone: true,
         address: true,
         barangay: true,
-        location: {
+        Location: {
           select: {
             latitude: true,
             longitude: true,
@@ -307,9 +312,7 @@ export const updateSituationStatus = async (req: AuthRequest, res: Response): Pr
         title: `${status} Status Update`,
         message: `User status updated to ${status}`,
         data: { userId: req.user.id, status },
-        user: {
-          connect: { id: req.user.id }
-        }
+        userId: req.user.id 
       }
     });
 

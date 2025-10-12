@@ -1,6 +1,7 @@
 import { Response } from 'express'
 import { prisma } from '../index'
 import { AuthRequest } from '../types/custom'
+import { randomUUID } from 'crypto'
 
 // List weather alerts (public to admin only)
 export const listWeatherAlerts = async (_req: AuthRequest, res: Response) => {
@@ -34,13 +35,27 @@ export const createWeatherAlert = async (req: AuthRequest, res: Response) => {
     }
   }catch(e){ /* ignore */ }
 
-  const wa = await prisma.weatherAlert.create({ data: { title, message, area: area || null, hourlyIndexes: hourlyIndexes || [], daily: !!daily, /* store meta in area.meta for now */ } })
+  const wa = await prisma.weatherAlert.create({ data: { 
+    id: randomUUID(),
+    type: 'WEATHER',
+    severity: 'MEDIUM',
+    title, 
+    description: message || '',
+    message,
+    source: 'SYSTEM',
+    location: {},
+    startsAt: new Date(),
+    area: area || null, 
+    hourlyIndexes: hourlyIndexes || [], 
+    daily: !!daily,
+    updatedAt: new Date()
+  } })
 
     // create notification records for all users and send push
     const users = await prisma.user.findMany({ select: { id: true } })
     const notifs = []
     for(const u of users){
-      const n = await prisma.notification.create({ data: { user: { connect: { id: u.id } }, type: 'WEATHER', title, message, data: { weatherAlertId: wa.id, meta: payloadMeta } } })
+      const n = await prisma.notification.create({ data: { userId: u.id , type: 'WEATHER', title, message, data: { weatherAlertId: wa.id, meta: payloadMeta } } })
       notifs.push(n)
       // emit via realtime
       try{ const { getIO } = require('../realtime'); const io = getIO(); io.to(`user_${u.id}`).emit('notification:new', n) }catch(e){/* ignore */}

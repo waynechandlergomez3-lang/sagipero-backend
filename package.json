@@ -6,7 +6,7 @@
         "predev": "npm run local-ip",
         "start": "node dist/index.js",
         "start:prod": "NODE_ENV=production node dist/index.js",
-        "build": "tsc --skipLibCheck",
+        "build": "tsc",
         "dev": "ts-node-dev --respawn src/index.ts",
         "local-ip": "node scripts/updateLocalIP.js",
         "seed": "ts-node prisma/seed.ts",

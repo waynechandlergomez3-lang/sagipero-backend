@@ -26,25 +26,8 @@ export const auth = async (req: AuthRequest, res: Response, next: NextFunction) 
 
     const user = await prisma.user.findUnique({
       where: { id: decoded.userId },
-      select: { 
-        id: true,
-        email: true,
-        name: true,
-        phone: true,
-        role: true,
-  responderStatus: true,
-  situationStatus: true,
-        address: true,
-        barangay: true,
-        specialCircumstances: true,
-        medicalConditions: true,
-        allergies: true,
-        bloodType: true,
-        emergencyContactName: true,
-        emergencyContactPhone: true,
-        emergencyContactRelation: true,
-        createdAt: true,
-        updatedAt: true
+      omit: {
+        password: true
       }
     });
     console.log('User lookup result:', user);

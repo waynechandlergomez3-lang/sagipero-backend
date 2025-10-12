@@ -3,6 +3,7 @@ import { prisma } from '../index';
 import { AuthRequest } from '../types/custom';
 import { upload } from '../utils/upload';
 import fs from 'fs';
+import { randomUUID } from 'crypto';
 
 interface FileAuthRequest extends AuthRequest {
   file?: Express.Multer.File;
@@ -139,10 +140,12 @@ export const uploadDocument = async (req: FileAuthRequest, res: Response): Promi
 
     const document = await prisma.userDocument.create({
       data: {
+        id: randomUUID(),
         userId: req.user.id,
         type,
         fileUrl,
-        verified: false
+        verified: false,
+        updatedAt: new Date()
       },
       select: {
         id: true,

@@ -1,6 +1,7 @@
 import { Response } from 'express';
 import { prisma } from '../index';
 import { AuthRequest } from '../types/custom';
+import { randomUUID } from 'crypto';
 
 export const createEvacuationCenter = async (req: AuthRequest, res: Response) => {
   try {
@@ -8,6 +9,7 @@ export const createEvacuationCenter = async (req: AuthRequest, res: Response) =>
     
     const center = await prisma.evacuationCenter.create({
       data: {
+        id: randomUUID(),
         name,
         address,
         capacity: Number(capacity),
@@ -15,7 +17,8 @@ export const createEvacuationCenter = async (req: AuthRequest, res: Response) =>
         contactNumber,
         facilities,
         currentCount: 0,
-        isActive: true
+        isActive: true,
+        updatedAt: new Date()
       }
     });
     
@@ -40,7 +43,7 @@ export const getEvacuationCenters = async (_req: AuthRequest, res: Response) => 
         contactNumber: true,
         facilities: true,
         isActive: true,
-        emergencies: {
+        Emergency: {
           select: {
             id: true,
             type: true,
