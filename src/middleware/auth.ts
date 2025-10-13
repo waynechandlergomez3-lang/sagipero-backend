@@ -1,6 +1,6 @@
 import { Response, NextFunction } from 'express';
 import { verifyToken } from '../utils/jwt';
-import { db } from '../services/database';
+import { rawDb } from '../services/rawDatabase';
 
 import { AuthRequest } from '../types/custom';
 
@@ -34,24 +34,9 @@ export const auth = async (req: AuthRequest, res: Response, next: NextFunction):
     console.log('🔍 Looking up user with ID:', decoded.userId);
     
     try {
-      // Force database connection establishment
-      console.log('🔌 Getting database client...');
-      const client = await db.getClient();
-      console.log('✅ Database client obtained');
+      console.log('� Using raw database service for auth to avoid prepared statement conflicts');
       
-      // Ensure connection is active
-      await client.$connect();
-      console.log('✅ Database connection active');
-      
-      console.log('📡 Database query starting...');
-      const user = await client.user.findUnique({
-        where: { id: decoded.userId },
-        omit: {
-          password: true
-        }
-      });
-      console.log('📡 Database query completed:', user ? 'User found' : 'User not found');
-
+      const user = await rawDb.getUserById(decoded.userId);
       console.log('🔍 User lookup result:', user ? `Found: ${user.email}` : 'Not found');
 
       if (!user) {
@@ -61,14 +46,12 @@ export const auth = async (req: AuthRequest, res: Response, next: NextFunction):
       }
 
       req.user = user;
-      console.log('✅ Auth middleware successful, proceeding to route');
+      console.log('✅ Auth middleware successful via raw database service, proceeding to route');
       next();
       return;
       
     } catch (dbError) {
-      console.error('🔄 Database connection issue detected, attempting reconnection...');
-      console.error('❌ Database reconnection failed:', dbError);
-      console.error('💥 Database error in auth middleware:', dbError);
+      console.error('� Raw database error in auth middleware:', dbError);
       res.status(401).json({ error: 'Please authenticate' });
       return;
     }

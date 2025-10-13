@@ -79,6 +79,27 @@ class RawDatabaseService {
     }
   }
 
+  // Find user by ID - raw SQL (for auth middleware)
+  public async getUserById(id: string) {
+    const client = await this.pool.connect();
+    try {
+      const query = `
+        SELECT id, email, name, role, phone, address, barangay,
+               "specialCircumstances", "medicalConditions", allergies, "bloodType",
+               "emergencyContactName", "emergencyContactPhone", "emergencyContactRelation",
+               "createdAt", "updatedAt"
+        FROM "User" 
+        WHERE id = $1
+      `;
+      
+      const result = await client.query(query, [id]);
+      return result.rows.length > 0 ? result.rows[0] : null;
+      
+    } finally {
+      client.release();
+    }
+  }
+
   // Create user - raw SQL
   public async createUser(userData: {
     id: string;
