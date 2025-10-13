@@ -13,6 +13,19 @@ import { setIO } from './realtime';
 // Initialize environment variables
 dotenv.config();
 
+// CRITICAL FIX: Force correct DATABASE_URL to use transaction pooler (port 6543)
+// This prevents "prepared statement does not exist" errors from session pooler (port 5432)
+const CORRECT_DATABASE_URL = "postgresql://postgres.vsrvdgzvyhlpnnvktuwn:Sagipero081@aws-1-us-east-2.pooler.supabase.com:6543/postgres";
+if (!process.env.DATABASE_URL || process.env.DATABASE_URL.includes(':5432')) {
+  console.log('🔧 Fixing DATABASE_URL: Forcing transaction pooler (port 6543)');
+  process.env.DATABASE_URL = CORRECT_DATABASE_URL;
+} else if (process.env.DATABASE_URL.includes(':6543')) {
+  console.log('✅ DATABASE_URL already correct (port 6543)');
+} else {
+  console.log('⚠️  Unknown DATABASE_URL format - setting correct one');
+  process.env.DATABASE_URL = CORRECT_DATABASE_URL;
+}
+
 // Create Express app
 const app = express();
 
@@ -153,4 +166,5 @@ app.use(errorHandler);
 const PORT = Number(process.env.PORT) || 8080;
 httpServer.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running on port ${PORT} (LAN accessible)`);
+  console.log(`🗄️  Database URL port: ${process.env.DATABASE_URL?.match(/:(\d+)\//)?.[1] || 'unknown'}`);
 });

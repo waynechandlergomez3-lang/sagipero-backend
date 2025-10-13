@@ -1,21 +1,36 @@
-// Railway Environment Variables Check
-// This script shows what environment variables Railway needs
+console.log('🚨 Railway DATABASE_URL Override Required');
+console.log('========================================');
+console.log('');
+console.log('❌ CURRENT ISSUE: Railway is using port 5432 (session pooler)');
+console.log('   This causes "prepared statement does not exist" errors');
+console.log('');
+console.log('✅ REQUIRED ACTION: Set Railway environment variable');
+console.log('');
+console.log('🔧 STEPS TO FIX:');
+console.log('1. Go to: https://railway.app/dashboard');
+console.log('2. Select your Sagipero project');
+console.log('3. Click on backend service');
+console.log('4. Go to "Variables" tab');
+console.log('5. Look for DATABASE_URL variable');
+console.log('6. DELETE any existing DATABASE_URL variables');
+console.log('7. ADD new DATABASE_URL variable with value:');
+console.log('');
+console.log('   postgresql://postgres.vsrvdgzvyhlpnnvktuwn:Sagipero081@aws-1-us-east-2.pooler.supabase.com:6543/postgres');
+console.log('');
+console.log('8. Click "Deploy" button to redeploy');
+console.log('');
+console.log('⚠️  IMPORTANT NOTES:');
+console.log('• Make sure to use port :6543 (not :5432)');
+console.log('• Delete any duplicate DATABASE_URL variables');
+console.log('• Wait for deployment to complete before testing');
+console.log('');
+console.log('🧪 AFTER FIX: Run this command to verify:');
+console.log('   node comprehensive-fix.js');
+console.log('');
+console.log('💡 The version was bumped to 1.0.2 to trigger redeploy');
 
-console.log('🚀 Railway Environment Variables Required:');
-console.log('==========================================');
-console.log('');
-console.log('Add these to your Railway service variables:');
-console.log('');
-console.log('DATABASE_URL=postgresql://postgres.vsrvdgzvyhlpnnvktuwn:Sagipero081@aws-1-us-east-2.pooler.supabase.com:6543/postgres');
-console.log('JWT_SECRET=a1fef9d66b662260094f4b85a879af9823b1b7479224aa80f84c8c5a40ffb9a5');
-console.log('NODE_ENV=production');
-console.log('PORT=8080');
-console.log('');
-console.log('🔧 Steps to add in Railway:');
-console.log('1. Go to your Railway dashboard');
-console.log('2. Click on sagipero-backend service');
-console.log('3. Go to Variables/Environment tab');
-console.log('4. Add each variable above');
-console.log('5. Deploy/restart the service');
-console.log('');
-console.log('⚠️  IMPORTANT: Keep your database credentials secure!');
+// Also bump version to trigger auto-deploy
+const fs = require('fs');
+const packageJson = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+console.log(`📦 Current version: ${packageJson.version}`);
+console.log('🚀 This will trigger automatic Railway redeploy when pushed');

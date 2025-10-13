@@ -1,78 +1,77 @@
-#!/usr/bin/env node
-// Comprehensive fix script for TypeScript errors
+// Comprehensive fix for Railway + Supabase connection issues
+// This addresses the intermittent "prepared statement does not exist" errors
 
-const fs = require('fs');
-const path = require('path');
+const { PrismaClient } = require('@prisma/client');
 
-function fixEmergencyController() {
-  const filePath = path.join(__dirname, 'src', 'controllers', 'emergencyController.ts');
-  let content = fs.readFileSync(filePath, 'utf8');
+async function testAndFixConnection() {
+  console.log('🔧 Railway + Supabase Connection Fix');
+  console.log('=====================================');
   
-  // Fix notification creates - replace user: { connect: { id: X } } with userId: X
-  content = content.replace(/user:\s*{\s*connect:\s*{\s*id:\s*([^}]+)\s*}\s*}/g, 'userId: $1');
+  // Check current DATABASE_URL
+  const currentUrl = process.env.DATABASE_URL;
+  console.log('Current DATABASE_URL port:', currentUrl?.includes(':5432') ? '5432 (SESSION POOLER - PROBLEMATIC)' : currentUrl?.includes(':6543') ? '6543 (TRANSACTION POOLER - CORRECT)' : 'UNKNOWN');
   
-  // Fix emergency includes - replace user: true with User_Emergency_userIdToUser: true
-  content = content.replace(/user:\s*true/g, 'User_Emergency_userIdToUser: true');
-  
-  // Fix emergency includes - replace responder: true with User_Emergency_responderIdToUser: true
-  content = content.replace(/responder:\s*true/g, 'User_Emergency_responderIdToUser: true');
-  
-  // Fix property access - replace .user with .User_Emergency_userIdToUser
-  content = content.replace(/\.user([^a-zA-Z_])/g, '.User_Emergency_userIdToUser$1');
-  
-  // Fix property access - replace .responder with .User_Emergency_responderIdToUser  
-  content = content.replace(/\.responder([^a-zA-Z_])/g, '.User_Emergency_responderIdToUser$1');
-  
-  fs.writeFileSync(filePath, content);
-  console.log('✅ Fixed emergencyController.ts');
-}
+  if (currentUrl?.includes(':5432')) {
+    console.log('❌ PROBLEM DETECTED: Using session pooler (port 5432)');
+    console.log('   This causes "prepared statement does not exist" errors');
+    console.log('');
+    console.log('✅ SOLUTION: Railway environment variable must be updated to:');
+    console.log('   postgresql://postgres.vsrvdgzvyhlpnnvktuwn:Sagipero081@aws-1-us-east-2.pooler.supabase.com:6543/postgres');
+    console.log('');
+    console.log('🔧 MANUAL STEPS REQUIRED:');
+    console.log('1. Go to Railway Dashboard');
+    console.log('2. Find DATABASE_URL variable');
+    console.log('3. Change port from :5432 to :6543');
+    console.log('4. Redeploy the service');
+    return;
+  }
 
-function fixOtherControllers() {
-  const files = [
-    'notificationController.ts',
-    'userController.ts', 
-    'weatherAlertController.ts',
-    'medicalProfileController.ts',
-    'locationController.ts',
-    'evacuationCenterController.ts'
-  ];
-  
-  files.forEach(fileName => {
-    const filePath = path.join(__dirname, 'src', 'controllers', fileName);
-    let content = fs.readFileSync(filePath, 'utf8');
-    let changed = false;
-    
-    // Fix notification user relations
-    const newContent1 = content.replace(/user:\s*{\s*connect:\s*{\s*id:\s*([^}]+)\s*}\s*}/g, 'userId: $1');
-    if (newContent1 !== content) {
-      content = newContent1;
-      changed = true;
-    }
-    
-    // Fix location relations (capitalize Location)
-    const newContent2 = content.replace(/location:\s*{/g, 'Location: {');
-    if (newContent2 !== content) {
-      content = newContent2;
-      changed = true;
-    }
-    
-    // Fix emergencies relations
-    const newContent3 = content.replace(/emergencies:\s*{/g, 'Emergency: {');
-    if (newContent3 !== content) {
-      content = newContent3;
-      changed = true;
-    }
-    
-    if (changed) {
-      fs.writeFileSync(filePath, content);
-      console.log(`✅ Fixed ${fileName}`);
-    } else {
-      console.log(`⚪ No changes needed in ${fileName}`);
+  // Test connection
+  const prisma = new PrismaClient({
+    datasources: {
+      db: {
+        url: currentUrl
+      }
     }
   });
+
+  try {
+    console.log('🧪 Testing database connection...');
+    
+    // Simple query to test prepared statements
+    const userCount = await prisma.user.count();
+    console.log('✅ Connection successful!');
+    console.log(`📊 Total users: ${userCount}`);
+    
+    // Test a login query specifically
+    console.log('🧪 Testing login query...');
+    const testUser = await prisma.user.findUnique({
+      where: { email: 'testuser@sagipero.local' }
+    });
+    
+    if (testUser) {
+      console.log('✅ Login query successful!');
+      console.log('🎉 Database connection is working properly');
+    } else {
+      console.log('⚠️  Test user not found, but connection works');
+    }
+    
+  } catch (error) {
+    console.log('❌ Connection failed:');
+    console.log('Error:', error.message);
+    
+    if (error.message.includes('prepared statement')) {
+      console.log('');
+      console.log('🚨 PREPARED STATEMENT ERROR DETECTED!');
+      console.log('This confirms Railway is using session pooler (port 5432)');
+      console.log('');
+      console.log('🔧 IMMEDIATE ACTION REQUIRED:');
+      console.log('Update Railway DATABASE_URL to use port :6543');
+    }
+  } finally {
+    await prisma.$disconnect();
+  }
 }
 
-console.log('🔧 Starting comprehensive fixes...');
-fixEmergencyController();
-fixOtherControllers();
-console.log('✅ All fixes completed!');
+// Run the test
+testAndFixConnection().catch(console.error);

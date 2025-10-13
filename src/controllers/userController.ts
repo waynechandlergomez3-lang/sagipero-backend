@@ -5,6 +5,12 @@ import { generateToken } from '../utils/jwt';
 import { AuthRequest } from '../types/custom';
 import { randomUUID } from 'crypto';
 
+// CRITICAL FIX: Force correct DATABASE_URL to use transaction pooler (port 6543)
+const CORRECT_DATABASE_URL = "postgresql://postgres.vsrvdgzvyhlpnnvktuwn:Sagipero081@aws-1-us-east-2.pooler.supabase.com:6543/postgres";
+if (!process.env.DATABASE_URL || process.env.DATABASE_URL.includes(':5432')) {
+  process.env.DATABASE_URL = CORRECT_DATABASE_URL;
+}
+
 const prisma = new PrismaClient();
 
 export const signup = async (req: AuthRequest, res: Response): Promise<void> => {
