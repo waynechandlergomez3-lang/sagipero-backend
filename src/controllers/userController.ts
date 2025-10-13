@@ -182,8 +182,31 @@ export const login = async (req: AuthRequest, res: Response): Promise<void> => {
     const { password: _, ...userWithoutPassword } = user;
     res.json({ user: userWithoutPassword, token });
   } catch (error) {
+    // Enhanced error logging with database connection details
+    const databaseUrl = process.env.DATABASE_URL || 'Not set';
+    const port = databaseUrl.includes(':5432') ? '5432 (SESSION POOLER - PROBLEMATIC)' : 
+                 databaseUrl.includes(':6543') ? '6543 (TRANSACTION POOLER - CORRECT)' : 'UNKNOWN';
+    
     console.error('Login error:', error);
-    res.status(500).json({ error: 'Error logging in' });
+    console.error('Database URL port:', port);
+    console.error('Full DATABASE_URL:', databaseUrl.replace(/:[^:@]*@/, ':***@')); // Hide password
+    
+    // Check if it's the prepared statement error
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    if (errorMessage.includes('prepared statement') && databaseUrl.includes(':5432')) {
+      console.error('🚨 PREPARED STATEMENT ERROR: Using session pooler (port 5432)');
+      console.error('💡 SOLUTION: Should use transaction pooler (port 6543)');
+      res.status(500).json({ 
+        error: 'Database configuration error - using session pooler instead of transaction pooler',
+        debug: `Database port: ${port}`,
+        hint: 'Contact administrator to fix DATABASE_URL configuration'
+      });
+    } else {
+      res.status(500).json({ 
+        error: 'Error logging in',
+        debug: `Database port: ${port}`
+      });
+    }
   }
 };
 
