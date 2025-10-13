@@ -78,7 +78,7 @@ class DatabaseService {
     return await this.ensureHealthyConnection();
   }
 
-  // Method for critical operations with retry logic and prepared statement avoidance
+  // Method for critical operations with retry logic and prepared statement cleanup
   public async withRetry<T>(operation: (prisma: PrismaClient) => Promise<T>): Promise<T> {
     const maxRetries = 3;
     let lastError: any;
@@ -86,45 +86,60 @@ class DatabaseService {
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
         const client = await this.getClient();
-        return await operation(client);
+        
+        // Clear any existing prepared statements before each operation
+        if (attempt > 1) {
+          try {
+            await client.$executeRaw`DEALLOCATE ALL`;
+            console.log(`🧹 Cleared all prepared statements for retry ${attempt}`);
+          } catch (deallocateError) {
+            // Ignore errors - prepared statements may not exist
+            console.log('Deallocate completed (no statements to clear)');
+          }
+        }
+        
+        const result = await operation(client);
+        
+        // Clear prepared statements after successful operation to prevent accumulation
+        try {
+          await client.$executeRaw`DEALLOCATE ALL`;
+          console.log('🧹 Post-operation cleanup: cleared all prepared statements');
+        } catch (deallocateError) {
+          // Ignore errors - this is just cleanup
+        }
+        
+        return result;
       } catch (error) {
         lastError = error;
         const errorMessage = error instanceof Error ? error.message : String(error);
         
         if (errorMessage.includes('prepared statement') && attempt < maxRetries) {
-          console.warn(`🔄 Prepared statement error (attempt ${attempt}/${maxRetries}), using fresh connection with UUID suffix...`);
+          console.warn(`🔄 Prepared statement error (attempt ${attempt}/${maxRetries}), clearing all statements...`);
           
-          // DRASTIC FIX: Create completely new client with modified connection string to force new session
           try {
+            // Force clear all prepared statements
+            await this.prisma.$executeRaw`DEALLOCATE ALL`;
+            console.log('✅ Force-cleared all prepared statements');
+          } catch (deallocateError) {
+            console.log('Deallocate attempt completed');
+          }
+          
+          try {
+            // Create fresh connection
             await this.prisma.$disconnect();
-            
-            // Add unique suffix to connection string to force new database session
-            const originalUrl = process.env.DATABASE_URL || '';
-            const uniqueSuffix = Math.random().toString(36).substring(7);
-            const modifiedUrl = originalUrl + (originalUrl.includes('?') ? '&' : '?') + `client_id=${uniqueSuffix}`;
-            
-            this.prisma = new PrismaClient({
-              datasources: {
-                db: {
-                  url: modifiedUrl
-                }
-              },
-              log: ['error'],
-              errorFormat: 'minimal'
-            });
-            
+            this.createNewClient();
             await this.prisma.$connect();
             
             // Reset health check timer
             this.lastHealthCheck = 0;
             
-            console.log(`✅ Fresh database session created with unique ID: ${uniqueSuffix}`);
+            console.log(`✅ Fresh database connection created for retry ${attempt}`);
           } catch (reconnectError) {
             console.warn('Fresh connection creation failed during retry:', reconnectError);
           }
           
-          // Wait a bit before retry with exponential backoff
-          await new Promise(resolve => setTimeout(resolve, 300 * attempt));
+          // Wait before retry
+          await new Promise(resolve => setTimeout(resolve, 100 * attempt));
           continue;
         }
         
