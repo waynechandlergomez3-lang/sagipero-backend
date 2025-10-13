@@ -1,5 +1,5 @@
 import { Response } from 'express';
-import { prisma } from '../index';
+import { db } from '../index';
 import { AuthRequest } from '../types/custom';
 import { upload } from '../utils/upload';
 import fs from 'fs';
@@ -21,7 +21,7 @@ export const updateMedicalProfile = async (req: AuthRequest, res: Response) => {
       emergencyContactRelation
     } = req.body;
 
-    const updatedUser = await prisma.user.update({
+    const updatedUser = await db.withRetry(async (prisma) => prisma.user.update({
       where: { id: req.user?.id },
       data: {
         specialCircumstances,
@@ -44,7 +44,7 @@ export const updateMedicalProfile = async (req: AuthRequest, res: Response) => {
         createdAt: true,
         updatedAt: true
       }
-    });
+    }));
 
     res.json(updatedUser);
   } catch (error) {
@@ -55,7 +55,7 @@ export const updateMedicalProfile = async (req: AuthRequest, res: Response) => {
 
 export const getCommonMedicalConditions = async (_req: AuthRequest, res: Response) => {
   try {
-    const conditions = await prisma.commonMedicalCondition.findMany({
+    const conditions = await db.withRetry(async (prisma) => prisma.commonMedicalCondition.findMany({
       select: {
         id: true,
         name: true,
@@ -64,7 +64,7 @@ export const getCommonMedicalConditions = async (_req: AuthRequest, res: Respons
         createdAt: true
       },
       orderBy: { name: 'asc' }
-    });
+    }));
     res.json(conditions);
   } catch (error) {
     console.error('Error fetching medical conditions:', error);
@@ -74,7 +74,7 @@ export const getCommonMedicalConditions = async (_req: AuthRequest, res: Respons
 
 export const getCommonAllergies = async (_req: AuthRequest, res: Response) => {
   try {
-    const allergies = await prisma.commonAllergy.findMany({
+    const allergies = await db.withRetry(async (prisma) => prisma.commonAllergy.findMany({
       select: {
         id: true,
         name: true,
@@ -83,7 +83,7 @@ export const getCommonAllergies = async (_req: AuthRequest, res: Response) => {
         createdAt: true
       },
       orderBy: { name: 'asc' }
-    });
+    }));
     res.json(allergies);
   } catch (error) {
     console.error('Error fetching allergies:', error);
@@ -138,10 +138,10 @@ export const uploadDocument = async (req: FileAuthRequest, res: Response): Promi
 
     const fileUrl = await upload(uploadFile);
 
-    const document = await prisma.userDocument.create({
+    const document = await db.withRetry(async (prisma) => prisma.userDocument.create({
       data: {
         id: randomUUID(),
-        userId: req.user.id,
+        userId: req.user!.id,
         type,
         fileUrl,
         verified: false,
@@ -156,7 +156,7 @@ export const uploadDocument = async (req: FileAuthRequest, res: Response): Promi
         createdAt: true,
         updatedAt: true
       }
-    });
+    }));
 
     console.log('Created UserDocument:', document);
 
@@ -178,7 +178,7 @@ export const verifyDocument = async (req: AuthRequest, res: Response) => {
     const { documentId } = req.params;
     const { verified } = req.body;
 
-    const document = await prisma.userDocument.update({
+    const document = await db.withRetry(async (prisma) => prisma.userDocument.update({
       where: { id: documentId },
       data: { verified },
       select: {
@@ -190,7 +190,7 @@ export const verifyDocument = async (req: AuthRequest, res: Response) => {
         createdAt: true,
         updatedAt: true
       }
-    });
+    }));
 
     res.json(document);
   } catch (error) {
@@ -205,10 +205,10 @@ export const getUserDocuments = async (req: AuthRequest, res: Response) => {
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
-    const docs = await prisma.userDocument.findMany({
-      where: { userId: req.user.id },
+    const docs = await db.withRetry(async (prisma) => prisma.userDocument.findMany({
+      where: { userId: req.user!.id },
       select: { id: true, type: true, fileUrl: true, verified: true, createdAt: true }
-    });
+    }));
 
     return res.json(docs);
   } catch (error) {

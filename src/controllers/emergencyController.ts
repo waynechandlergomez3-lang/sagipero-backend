@@ -1,5 +1,5 @@
 import { Response } from 'express';
-import { prisma } from '../index';
+import { db } from '../index';
 import { EmergencyStatus, ResponderStatus } from '../generated/prisma';
 import { AuthRequest } from '../types/custom';
 import pushStore from '../utils/pushStore';
@@ -30,7 +30,9 @@ export const createEmergency = async (req: AuthRequest, res: Response): Promise<
     }
 
   // Fetch reporting user details so we can compute priority from their special/medical conditions
-  const reportingUser = await prisma.user.findUnique({ where: { id: userId }, select: { id: true, name: true, phone: true, specialCircumstances: true, medicalConditions: true } });
+  const reportingUser = await db.withRetry(async (prisma) => 
+    prisma.user.findUnique({ where: { id: userId }, select: { id: true, name: true, phone: true, specialCircumstances: true, medicalConditions: true } })
+  );
 
   // For SOS or urgent typed requests, set base priority
   const urgentTypes = ['SOS','MEDICAL','FIRE','FLOOD','EARTHQUAKE'];
@@ -44,10 +46,12 @@ export const createEmergency = async (req: AuthRequest, res: Response): Promise<
   }
     
   // enforce one active emergency per user
-  const existing = await prisma.emergency.findFirst({ where: { userId, NOT: { status: EmergencyStatus.RESOLVED } } });
+  const existing = await db.withRetry(async (prisma) => 
+    prisma.emergency.findFirst({ where: { userId, NOT: { status: EmergencyStatus.RESOLVED } } })
+  );
   if (existing) { res.status(400).json({ error: 'You already have an active emergency' }); return; }
 
-  const emergency = await prisma.emergency.create({
+  const emergency = await db.withRetry(async (prisma) => prisma.emergency.create({
       data: {
         id: randomUUID(),
         type: type || 'SOS',
@@ -68,7 +72,8 @@ export const createEmergency = async (req: AuthRequest, res: Response): Promise<
           }
         }
       }
-    });
+    })
+  );
 
     // Get Socket.IO instance
     const { getIO } = require('../realtime');
@@ -81,7 +86,7 @@ export const createEmergency = async (req: AuthRequest, res: Response): Promise<
     });
 
     // Create notification for user
-    const notif = await prisma.notification.create({
+    const notif = await db.withRetry(async (prisma) => prisma.notification.create({
       data: {
         type: 'EMERGENCY',
         title: 'Emergency Created',
@@ -89,7 +94,7 @@ export const createEmergency = async (req: AuthRequest, res: Response): Promise<
         data: { emergencyId: emergency.id },
         userId: userId
       }
-    });
+    }));
 
     // Emit real-time notification to the user
     try {
@@ -109,15 +114,19 @@ export const createEmergency = async (req: AuthRequest, res: Response): Promise<
       // Notify admins and responders so staff get notified on their phones
       try {
         // find admin and responder users
-        const staff = await prisma.user.findMany({ where: { role: { in: ['ADMIN', 'RESPONDER'] } }, select: { id: true } });
-        const staffIds = staff.map(s => s.id);
+        const staff = await db.withRetry(async (prisma) => 
+          prisma.user.findMany({ where: { role: { in: ['ADMIN', 'RESPONDER'] } }, select: { id: true } })
+        );
+        const staffIds = staff.map((s: any) => s.id);
         const allTokens = pushStore.listTokens();
         const staffTokens = allTokens.filter(t => staffIds.includes(t.userId)).map(t => t.token);
         if (staffTokens.length > 0) {
           // create a generic notification record for staff
           for (const sid of staffIds) {
             try {
-              await prisma.notification.create({ data: { userId: sid, type: 'EMERGENCY', title: 'New Emergency', message: `A new emergency was reported: ${emergency.type}`, data: { emergencyId: emergency.id } } });
+              await db.withRetry(async (prisma) => 
+                prisma.notification.create({ data: { userId: sid, type: 'EMERGENCY', title: 'New Emergency', message: `A new emergency was reported: ${emergency.type}`, data: { emergencyId: emergency.id } } })
+              );
             } catch (e) { /* ignore per-user failures */ }
           }
           await push.sendPushToTokens(staffTokens, 'New Emergency', `Emergency reported: ${emergency.type}`, { emergencyId: emergency.id });
@@ -135,7 +144,9 @@ export const createEmergency = async (req: AuthRequest, res: Response): Promise<
 
   // record history
   try {
-    await prisma.$executeRaw`INSERT INTO public.emergency_history (emergency_id, event_type, payload) VALUES (${emergency.id}::uuid, 'CREATED', ${JSON.stringify(emergency)}::jsonb)`
+    await db.withRetry(async (prisma) => 
+      prisma.$executeRaw`INSERT INTO public.emergency_history (emergency_id, event_type, payload) VALUES (${emergency.id}::uuid, 'CREATED', ${JSON.stringify(emergency)}::jsonb)`
+    );
   } catch(e){ console.warn('Failed to record emergency history', e) }
 
     res.status(201).json(emergency);
@@ -148,7 +159,7 @@ export const createEmergency = async (req: AuthRequest, res: Response): Promise<
 
 export const listEmergencies = async (_req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const emergencies = await prisma.emergency.findMany({
+    const emergencies = await db.withRetry(async (prisma) => prisma.emergency.findMany({
       where: { NOT: { status: EmergencyStatus.RESOLVED } },
       orderBy: { createdAt: 'desc' },
       include: {
@@ -167,7 +178,7 @@ export const listEmergencies = async (_req: AuthRequest, res: Response): Promise
           }
         }
       }
-    });
+    }));
   console.log('listEmergencies: found', (emergencies || []).length, 'records');
   res.json(emergencies);
   } catch (error) {
@@ -180,7 +191,9 @@ export const getEmergency = async (req: AuthRequest, res: Response): Promise<Res
   try {
     const { id } = req.params;
     if (!id) return res.status(400).json({ error: 'Missing emergency id' });
-    const emergency = await prisma.emergency.findUnique({ where: { id }, include: { User_Emergency_userIdToUser: true, User_Emergency_responderIdToUser: true } });
+    const emergency = await db.withRetry(async (prisma) => 
+      prisma.emergency.findUnique({ where: { id }, include: { User_Emergency_userIdToUser: true, User_Emergency_responderIdToUser: true } })
+    );
     if (!emergency) return res.status(404).json({ error: 'Emergency not found' });
 
     // Do not expose resolved emergencies to admins or responders via this endpoint
@@ -200,11 +213,11 @@ export const getLatestForUser = async (req: AuthRequest, res: Response): Promise
   try {
     const userId = req.user?.id;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
-    const emergency = await prisma.emergency.findFirst({
+    const emergency = await db.withRetry(async (prisma) => prisma.emergency.findFirst({
       where: { userId, NOT: { status: EmergencyStatus.RESOLVED } },
       orderBy: { createdAt: 'desc' },
       include: { User_Emergency_userIdToUser: true, User_Emergency_responderIdToUser: true }
-    });
+    }));
     if (!emergency) return res.status(404).json({ error: 'No emergencies found' });
     return res.json(emergency);
   } catch (err) {
@@ -216,7 +229,7 @@ export const getLatestForUser = async (req: AuthRequest, res: Response): Promise
 export const getAllEmergenciesHistory = async (_req: AuthRequest, res: Response): Promise<Response | void> => {
   try {
     // Return a list of emergencies with key fields and an aggregated latest history entry
-    const rows = await prisma.$queryRaw`
+    const rows = await db.withRetry(async (prisma) => prisma.$queryRaw`
       SELECT e."id", e."type", e."status", e."priority", e."location", e."address", e."userId", e."responderId", e."createdAt", e."updatedAt",
              r.name as responder_name,
              h.event_type as last_event_type, h.payload as last_event_payload, h.created_at as last_event_at
@@ -227,7 +240,7 @@ export const getAllEmergenciesHistory = async (_req: AuthRequest, res: Response)
       ) h ON TRUE
       ORDER BY e."createdAt" DESC
       LIMIT 100
-    `;
+    `);
 
     return res.json(rows);
   } catch (e) {
@@ -241,14 +254,14 @@ export const listPendingForResponder = async (req: AuthRequest, res: Response): 
     // Only responders should call this
     if (!req.user || req.user.role !== 'RESPONDER') return res.status(403).json({ error: 'Forbidden' });
 
-    const emergencies = await prisma.emergency.findMany({
+    const emergencies = await db.withRetry(async (prisma) => prisma.emergency.findMany({
       where: { status: EmergencyStatus.PENDING },
       orderBy: { createdAt: 'asc' },
       include: { User_Emergency_userIdToUser: true }
-    });
+    }));
 
     // Return basic info for responder to decide: type, address, location, createdAt, user
-    const simplified = emergencies.map(e => ({ id: e.id, type: e.type, address: e.address, location: e.location, createdAt: e.createdAt, user: e.User_Emergency_userIdToUser, priority: e.priority }));
+    const simplified = emergencies.map((e: any) => ({ id: e.id, type: e.type, address: e.address, location: e.location, createdAt: e.createdAt, user: e.User_Emergency_userIdToUser, priority: e.priority }));
     return res.json(simplified);
   } catch (err) {
     console.error('List pending for responder error:', err);
@@ -263,15 +276,15 @@ export const requestAssignment = async (req: AuthRequest, res: Response): Promis
     if (!emergencyId) return res.status(400).json({ error: 'Missing emergencyId' });
 
     // create a notification for admins to review
-    const notif = await prisma.notification.create({
+    const notif = await db.withRetry(async (prisma) => prisma.notification.create({
       data: {
         type: 'EMERGENCY',
         title: 'Responder Request',
-        message: `Responder ${req.user.id} requested assignment for ${emergencyId}${note ? ': ' + note : ''}`,
-        data: { emergencyId, responderId: req.user.id, note },
-        userId: req.user.id
+        message: `Responder ${req.user!.id} requested assignment for ${emergencyId}${note ? ': ' + note : ''}`,
+        data: { emergencyId, responderId: req.user!.id, note },
+        userId: req.user!.id
       }
-    });
+    }));
 
     // emit to admin channel
     try {
@@ -297,7 +310,9 @@ export const resolveEmergency = async (req: AuthRequest, res: Response): Promise
     // Only responder or admin can resolve
     if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
 
-  const emergency = await prisma.emergency.update({ where: { id: emergencyId }, data: { status: EmergencyStatus.RESOLVED, resolvedAt: new Date() } });
+  const emergency = await db.withRetry(async (prisma) => 
+    prisma.emergency.update({ where: { id: emergencyId }, data: { status: EmergencyStatus.RESOLVED, resolvedAt: new Date() } })
+  );
 
     try {
       const { getIO } = require('../realtime');
@@ -312,13 +327,17 @@ export const resolveEmergency = async (req: AuthRequest, res: Response): Promise
     // update responder status back to AVAILABLE if there was a responder
     try {
       if (emergency.responderId) {
-        await prisma.user.update({ where: { id: emergency.responderId }, data: { responderStatus: ResponderStatus.AVAILABLE } });
+        await db.withRetry(async (prisma) => 
+          prisma.user.update({ where: { id: emergency.responderId! }, data: { responderStatus: ResponderStatus.AVAILABLE } })
+        );
       }
     } catch (e) { console.warn('Failed to update responder status after resolve', e) }
 
     // record history
     try {
-      await prisma.$executeRaw`INSERT INTO public.emergency_history (emergency_id, event_type, payload) VALUES (${emergency.id}::uuid, 'RESOLVED', ${JSON.stringify({ resolvedAt: emergency.resolvedAt })}::jsonb)`
+      await db.withRetry(async (prisma) => 
+        prisma.$executeRaw`INSERT INTO public.emergency_history (emergency_id, event_type, payload) VALUES (${emergency.id}::uuid, 'RESOLVED', ${JSON.stringify({ resolvedAt: emergency.resolvedAt })}::jsonb)`
+      );
     } catch (e) { console.warn('Failed to record resolve history', e) }
 
     return res.json({ status: 'resolved' });
@@ -337,7 +356,9 @@ export const responderArrive = async (req: AuthRequest, res: Response): Promise<
     if (req.user.role !== 'RESPONDER' && req.user.role !== 'ADMIN') return res.status(403).json({ error: 'Forbidden' });
 
   console.log('ResponderArrive: user=', req.user?.id, 'body=', JSON.stringify(req.body));
-  const emergency = await prisma.emergency.findUnique({ where: { id: emergencyId } });
+  const emergency = await db.withRetry(async (prisma) => 
+    prisma.emergency.findUnique({ where: { id: emergencyId } })
+  );
     if (!emergency) return res.status(404).json({ error: 'Emergency not found' });
     if (emergency.status === EmergencyStatus.RESOLVED) return res.status(400).json({ error: 'Emergency already resolved' });
 
@@ -347,16 +368,22 @@ export const responderArrive = async (req: AuthRequest, res: Response): Promise<
     let updatedEmergency: any = null;
     try {
       // use the typed enum to avoid accidental string mismatches
-      updatedEmergency = await prisma.emergency.update({ where: { id: emergencyId }, data: { status: EmergencyStatus.ARRIVED }, include: { User_Emergency_userIdToUser: true, User_Emergency_responderIdToUser: true } });
+      updatedEmergency = await db.withRetry(async (prisma) => 
+        prisma.emergency.update({ where: { id: emergencyId }, data: { status: EmergencyStatus.ARRIVED }, include: { User_Emergency_userIdToUser: true, User_Emergency_responderIdToUser: true } })
+      );
     } catch (e) {
       console.error('ResponderArrive: prisma update failed, attempting SQL fallback to ensure DB persisted status ARRIVED', e);
       try {
         // raw SQL fallback: update status directly in DB. Use ::uuid cast for safety.
-        await prisma.$executeRaw`
-          UPDATE "Emergency" SET status = 'ARRIVED', "updatedAt" = now() WHERE id = ${emergencyId}::uuid
-        `;
+        await db.withRetry(async (prisma) => 
+          prisma.$executeRaw`
+            UPDATE "Emergency" SET status = 'ARRIVED', "updatedAt" = now() WHERE id = ${emergencyId}::uuid
+          `
+        );
         // read back the record
-        updatedEmergency = await prisma.emergency.findUnique({ where: { id: emergencyId }, include: { User_Emergency_userIdToUser: true, User_Emergency_responderIdToUser: true } });
+        updatedEmergency = await db.withRetry(async (prisma) => 
+          prisma.emergency.findUnique({ where: { id: emergencyId }, include: { User_Emergency_userIdToUser: true, User_Emergency_responderIdToUser: true } })
+        );
         console.log('ResponderArrive: SQL fallback update succeeded, fetched emergency:', updatedEmergency ? updatedEmergency.id : null);
       } catch (e2) {
         console.error('ResponderArrive: SQL fallback also failed', e2);
@@ -366,18 +393,27 @@ export const responderArrive = async (req: AuthRequest, res: Response): Promise<
 
     // include responderName if possible
     let responderName: string | null = null;
-    try { const r = await prisma.user.findUnique({ where: { id: req.user.id }, select: { name: true } }); responderName = r?.name || null; } catch(e) { /* ignore */ }
+    try { 
+      const r = await db.withRetry(async (prisma) => 
+        prisma.user.findUnique({ where: { id: req.user!.id }, select: { name: true } })
+      ); 
+      responderName = r?.name || null; 
+    } catch(e) { /* ignore */ }
 
-    const payload = { responderId: req.user.id, responderName, arrivedAt: new Date().toISOString() };
+    const payload = { responderId: req.user!.id, responderName, arrivedAt: new Date().toISOString() };
 
     try {
       // try primary insert
-      await prisma.$executeRaw`INSERT INTO public.emergency_history (emergency_id, event_type, payload) VALUES (${emergencyId}::uuid, 'ARRIVED', ${JSON.stringify(payload)}::jsonb)`
+      await db.withRetry(async (prisma) => 
+        prisma.$executeRaw`INSERT INTO public.emergency_history (emergency_id, event_type, payload) VALUES (${emergencyId}::uuid, 'ARRIVED', ${JSON.stringify(payload)}::jsonb)`
+      );
     } catch (e) {
       console.warn('ResponderArrive: primary history insert failed, attempting fallback', e);
       try {
         // fallback without explicit ::uuid cast (some driver setups prefer this)
-        await prisma.$executeRaw`INSERT INTO public.emergency_history (emergency_id, event_type, payload) VALUES (${emergencyId}, 'ARRIVED', ${JSON.stringify(payload)}::jsonb)`
+        await db.withRetry(async (prisma) => 
+          prisma.$executeRaw`INSERT INTO public.emergency_history (emergency_id, event_type, payload) VALUES (${emergencyId}, 'ARRIVED', ${JSON.stringify(payload)}::jsonb)`
+        );
       } catch (e2) { console.error('ResponderArrive: fallback history insert failed', e2); }
     }
 
@@ -399,9 +435,13 @@ export const responderArrive = async (req: AuthRequest, res: Response): Promise<
     // ensure the DB row is updated to ARRIVED and fetch the fresh record to return.
     try {
       console.log('ResponderArrive: Ensuring DB status is ARRIVED for', emergencyId);
-      await prisma.$executeRaw`UPDATE "Emergency" SET status = 'ARRIVED', "updatedAt" = now() WHERE id = ${emergencyId}::uuid`;
+      await db.withRetry(async (prisma) => 
+        prisma.$executeRaw`UPDATE "Emergency" SET status = 'ARRIVED', "updatedAt" = now() WHERE id = ${emergencyId}::uuid`
+      );
       // fetch authoritative record
-      updatedEmergency = await prisma.emergency.findUnique({ where: { id: emergencyId }, include: { User_Emergency_userIdToUser: true, User_Emergency_responderIdToUser: true } });
+      updatedEmergency = await db.withRetry(async (prisma) => 
+        prisma.emergency.findUnique({ where: { id: emergencyId }, include: { User_Emergency_userIdToUser: true, User_Emergency_responderIdToUser: true } })
+      );
       console.log('ResponderArrive: After ensure update, status=', updatedEmergency?.status);
     } catch (ensureErr) {
       console.error('ResponderArrive: failed final ensure update', ensureErr);
@@ -423,13 +463,17 @@ export const assignResponder = async (req: AuthRequest, res: Response): Promise<
     const { emergencyId, responderId } = req.body;
     if (!emergencyId || !responderId) return res.status(400).json({ error: 'Missing fields' });
 
-    const existing = await prisma.emergency.findUnique({ where: { id: emergencyId } });
+    const existing = await db.withRetry(async (prisma) => 
+      prisma.emergency.findUnique({ where: { id: emergencyId } })
+    );
     if (!existing) return res.status(404).json({ error: 'Emergency not found' });
     if (existing.status === EmergencyStatus.RESOLVED) return res.status(400).json({ error: 'Cannot assign responder to a resolved emergency' });
 
     // ensure responder is available (use raw SQL to read authoritative DB value)
     try {
-      const rows: any = await prisma.$queryRaw`SELECT "responderStatus" FROM "User" WHERE id = ${responderId} LIMIT 1`;
+      const rows: any = await db.withRetry(async (prisma) => 
+        prisma.$queryRaw`SELECT "responderStatus" FROM "User" WHERE id = ${responderId} LIMIT 1`
+      );
       const dbStatus = rows && rows[0] ? (rows[0].responderStatus || rows[0].responderstatus) : null;
       if (!dbStatus) return res.status(404).json({ error: 'Responder not found' });
       if (dbStatus !== 'AVAILABLE') {
@@ -438,7 +482,9 @@ export const assignResponder = async (req: AuthRequest, res: Response): Promise<
       }
     } catch (e) {
       console.warn('Failed to verify responder status with raw query, falling back to ORM', e);
-      const responder = await prisma.user.findUnique({ where: { id: responderId }, select: { responderStatus: true } });
+      const responder = await db.withRetry(async (prisma) => 
+        prisma.user.findUnique({ where: { id: responderId }, select: { responderStatus: true } })
+      );
       if (!responder) return res.status(404).json({ error: 'Responder not found' });
       if (responder.responderStatus !== 'AVAILABLE') {
         const rs: any = responder.responderStatus;
@@ -450,10 +496,10 @@ export const assignResponder = async (req: AuthRequest, res: Response): Promise<
     // perform assign + set responder ON_DUTY in a transaction to avoid races
     let emergency;
     try {
-      const results = await prisma.$transaction([
+      const results = await db.withRetry(async (prisma) => prisma.$transaction([
         prisma.emergency.update({ where: { id: emergencyId }, data: { responderId, status: EmergencyStatus.IN_PROGRESS }, include: { User_Emergency_userIdToUser: true, User_Emergency_responderIdToUser: true } }),
         prisma.user.update({ where: { id: responderId }, data: { responderStatus: ResponderStatus.ON_DUTY } })
-      ]);
+      ]));
       emergency = results[0];
     } catch (e) {
       console.error('Assign transaction failed', e);
@@ -463,14 +509,24 @@ export const assignResponder = async (req: AuthRequest, res: Response): Promise<
     // fetch responder name to include in history payload for human-friendly display
     let responderName: string | null = null
     try {
-      const r = await prisma.user.findUnique({ where: { id: responderId }, select: { name: true } });
+      const r = await db.withRetry(async (prisma) => 
+        prisma.user.findUnique({ where: { id: responderId }, select: { name: true } })
+      );
       responderName = r?.name || null
     } catch(e) { console.warn('Failed to fetch responder name for history payload', e) }
 
     const assignPayload = { responderId, responderName, assignedAt: new Date().toISOString() }
     // record history entry for assignment (two variants kept for safety)
-    try { await prisma.$executeRaw`INSERT INTO public.emergency_history (emergency_id, event_type, payload) VALUES (${emergency.id}, 'ASSIGNED', ${JSON.stringify(assignPayload)}::jsonb)` } catch(e){ console.warn('Failed to record assign history', e) }
-    try { await prisma.$executeRaw`INSERT INTO public.emergency_history (emergency_id, event_type, payload) VALUES (${emergency.id}::uuid, 'ASSIGNED', ${JSON.stringify(assignPayload)}::jsonb)` } catch(e){ console.warn('Failed to record assign history', e) }
+    try { 
+      await db.withRetry(async (prisma) => 
+        prisma.$executeRaw`INSERT INTO public.emergency_history (emergency_id, event_type, payload) VALUES (${emergency.id}, 'ASSIGNED', ${JSON.stringify(assignPayload)}::jsonb)`
+      ); 
+    } catch(e){ console.warn('Failed to record assign history', e) }
+    try { 
+      await db.withRetry(async (prisma) => 
+        prisma.$executeRaw`INSERT INTO public.emergency_history (emergency_id, event_type, payload) VALUES (${emergency.id}::uuid, 'ASSIGNED', ${JSON.stringify(assignPayload)}::jsonb)`
+      ); 
+    } catch(e){ console.warn('Failed to record assign history', e) }
 
     // emit event to user and responder
     try {
@@ -485,7 +541,7 @@ export const assignResponder = async (req: AuthRequest, res: Response): Promise<
     // create notification records and send push notifications to both resident and responder
     try {
       // notification to resident
-      await prisma.notification.create({
+      await db.withRetry(async (prisma) => prisma.notification.create({
         data: {
           userId: emergency.userId,
           type: 'EMERGENCY',
@@ -493,11 +549,11 @@ export const assignResponder = async (req: AuthRequest, res: Response): Promise<
           message: `A responder has been assigned to your emergency.`,
           data: { emergencyId: emergency.id }
         }
-      });
+      }));
 
       // notification to responder (if assigned)
       if (responderId) {
-        await prisma.notification.create({
+        await db.withRetry(async (prisma) => prisma.notification.create({
           data: {
             userId: responderId,
             type: 'EMERGENCY',
@@ -505,7 +561,7 @@ export const assignResponder = async (req: AuthRequest, res: Response): Promise<
             message: `You have been assigned to emergency ${emergency.id}.`,
             data: { emergencyId: emergency.id }
           }
-        });
+        }));
       }
 
       // send push notifications (high priority) to resident and responder tokens
@@ -543,7 +599,9 @@ export const acceptAssignment = async (req: AuthRequest, res: Response): Promise
     if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
 
     // ensure emergency exists
-    const emergency = await prisma.emergency.findUnique({ where: { id: emergencyId } });
+    const emergency = await db.withRetry(async (prisma) => 
+      prisma.emergency.findUnique({ where: { id: emergencyId } })
+    );
     if (!emergency) return res.status(404).json({ error: 'Emergency not found' });
     if (emergency.status === EmergencyStatus.RESOLVED) return res.status(400).json({ error: 'Emergency already resolved' });
 
@@ -551,14 +609,25 @@ export const acceptAssignment = async (req: AuthRequest, res: Response): Promise
     if (req.user.role === 'RESPONDER' && emergency.responderId !== req.user.id) return res.status(403).json({ error: 'You are not assigned to this emergency' });
 
     // update emergency status to ACCEPTED
-    const updated = await prisma.emergency.update({ where: { id: emergencyId }, data: { status: EmergencyStatus.ACCEPTED }, include: { User_Emergency_userIdToUser: true, User_Emergency_responderIdToUser: true } });
+    const updated = await db.withRetry(async (prisma) => 
+      prisma.emergency.update({ where: { id: emergencyId }, data: { status: EmergencyStatus.ACCEPTED }, include: { User_Emergency_userIdToUser: true, User_Emergency_responderIdToUser: true } })
+    );
 
     // update responder status to ON_DUTY
-    try { if (updated.responderId) await prisma.user.update({ where: { id: updated.responderId }, data: { responderStatus: ResponderStatus.ON_DUTY } }); } catch(e){ console.warn('acceptAssignment: failed to set responder ON_DUTY', e) }
+    try { 
+      if (updated.responderId) 
+        await db.withRetry(async (prisma) => 
+          prisma.user.update({ where: { id: updated.responderId! }, data: { responderStatus: ResponderStatus.ON_DUTY } })
+        ); 
+    } catch(e){ console.warn('acceptAssignment: failed to set responder ON_DUTY', e) }
 
     // record history
-    const payload = { responderId: req.user.id, acceptedAt: new Date().toISOString() };
-    try { await prisma.$executeRaw`INSERT INTO public.emergency_history (emergency_id, event_type, payload) VALUES (${emergencyId}::uuid, 'ACCEPTED', ${JSON.stringify(payload)}::jsonb)` } catch(e){ console.warn('acceptAssignment: failed to record history', e) }
+    const payload = { responderId: req.user!.id, acceptedAt: new Date().toISOString() };
+    try { 
+      await db.withRetry(async (prisma) => 
+        prisma.$executeRaw`INSERT INTO public.emergency_history (emergency_id, event_type, payload) VALUES (${emergencyId}::uuid, 'ACCEPTED', ${JSON.stringify(payload)}::jsonb)`
+      ); 
+    } catch(e){ console.warn('acceptAssignment: failed to record history', e) }
 
     // emit events to resident, responder, and admin
     try {
@@ -582,21 +651,37 @@ export const updateResponderLocation = async (req: AuthRequest, res: Response): 
     if (!emergencyId || !location) return res.status(400).json({ error: 'Missing fields' });
 
     // ensure emergency exists and isn't resolved
-    const emergency = await prisma.emergency.findUnique({ where: { id: emergencyId } });
+    const emergency = await db.withRetry(async (prisma) => 
+      prisma.emergency.findUnique({ where: { id: emergencyId } })
+    );
     if (!emergency) return res.status(404).json({ error: 'Emergency not found' });
     if (emergency.status === EmergencyStatus.RESOLVED) return res.status(400).json({ error: 'Emergency already resolved' });
 
   // Use raw SQL update to avoid needing regenerated Prisma client for new field
   const jsonLoc = JSON.stringify(location);
-  await prisma.$executeRaw`UPDATE "Emergency" SET "responderLocation" = ${jsonLoc}::jsonb WHERE id = ${emergencyId}`;
-  await prisma.emergency.findUnique({ where: { id: emergencyId }, include: { User_Emergency_userIdToUser: true, User_Emergency_responderIdToUser: true } });
+  await db.withRetry(async (prisma) => 
+    prisma.$executeRaw`UPDATE "Emergency" SET "responderLocation" = ${jsonLoc}::jsonb WHERE id = ${emergencyId}`
+  );
+  await db.withRetry(async (prisma) => 
+    prisma.emergency.findUnique({ where: { id: emergencyId }, include: { User_Emergency_userIdToUser: true, User_Emergency_responderIdToUser: true } })
+  );
   // record responder location history
   // include responder name in payload when possible for better admin UI
   try {
-    const me = req.user?.id ? await prisma.user.findUnique({ where: { id: req.user.id }, select: { name: true } }) : null
+    const me = req.user?.id ? await db.withRetry(async (prisma) => 
+      prisma.user.findUnique({ where: { id: req.user!.id }, select: { name: true } })
+    ) : null
     const payload = { location, ts: new Date().toISOString(), responderId: req.user?.id || null, responderName: me?.name || null }
-    try { await prisma.$executeRaw`INSERT INTO public.emergency_history (emergency_id, event_type, payload) VALUES (${emergencyId}, 'RESPONDER_LOCATION', ${JSON.stringify(payload)}::jsonb)` } catch(e){ console.warn('Failed to record responder location history', e) }
-    try { await prisma.$executeRaw`INSERT INTO public.emergency_history (emergency_id, event_type, payload) VALUES (${emergencyId}::uuid, 'RESPONDER_LOCATION', ${JSON.stringify(payload)}::jsonb)` } catch(e){ console.warn('Failed to record responder location history', e) }
+    try { 
+      await db.withRetry(async (prisma) => 
+        prisma.$executeRaw`INSERT INTO public.emergency_history (emergency_id, event_type, payload) VALUES (${emergencyId}, 'RESPONDER_LOCATION', ${JSON.stringify(payload)}::jsonb)`
+      ); 
+    } catch(e){ console.warn('Failed to record responder location history', e) }
+    try { 
+      await db.withRetry(async (prisma) => 
+        prisma.$executeRaw`INSERT INTO public.emergency_history (emergency_id, event_type, payload) VALUES (${emergencyId}::uuid, 'RESPONDER_LOCATION', ${JSON.stringify(payload)}::jsonb)`
+      ); 
+    } catch(e){ console.warn('Failed to record responder location history', e) }
   } catch(e) { console.warn('Failed to prepare responder location payload', e) }
     try {
       const { getIO } = require('../realtime');
@@ -619,10 +704,14 @@ export const getEmergencyHistory = async (req: AuthRequest, res: Response): Prom
     const { id } = req.params;
     if (!id) return res.status(400).json({ error: 'Missing emergency id' });
     // Only admins or involved users can view history
-    const emergency = await prisma.emergency.findUnique({ where: { id }, select: { id: true, userId: true, responderId: true } });
+    const emergency = await db.withRetry(async (prisma) => 
+      prisma.emergency.findUnique({ where: { id }, select: { id: true, userId: true, responderId: true } })
+    );
     if (!emergency) return res.status(404).json({ error: 'Emergency not found' });
     if (req.user?.role !== 'ADMIN' && req.user?.id !== emergency.userId && req.user?.id !== emergency.responderId) return res.status(403).json({ error: 'Forbidden' });
-  const rows = await prisma.$queryRaw`SELECT id, emergency_id, event_type, payload, created_at FROM public.emergency_history WHERE emergency_id = ${id}::uuid ORDER BY created_at ASC`;
+  const rows = await db.withRetry(async (prisma) => 
+    prisma.$queryRaw`SELECT id, emergency_id, event_type, payload, created_at FROM public.emergency_history WHERE emergency_id = ${id}::uuid ORDER BY created_at ASC`
+  );
     return res.json(rows);
   } catch (e) {
     console.error('Get emergency history error', e);

@@ -1,16 +1,16 @@
 import { Response } from 'express';
-import { prisma } from '../index';
+import { db } from '../index';
 import { AuthRequest } from '../types/custom';
 
 export const listNotifications = async (req: AuthRequest, res: Response): Promise<Response | void> => {
   try {
     if (!req.user?.id) return res.status(401).json({ error: 'Unauthorized' });
 
-    const notifications = await prisma.notification.findMany({
-      where: { userId: req.user.id },
+    const notifications = await db.withRetry(async (prisma) => prisma.notification.findMany({
+      where: { userId: req.user!.id },
       orderBy: { createdAt: 'desc' },
       select: { id: true, type: true, title: true, message: true, data: true, isRead: true, createdAt: true }
-    });
+    }));
 
     res.json(notifications);
   } catch (error) {
@@ -24,10 +24,14 @@ export const markAsRead = async (req: AuthRequest, res: Response): Promise<Respo
     const { id } = req.params;
     if (!req.user?.id) return res.status(401).json({ error: 'Unauthorized' });
 
-    const notif = await prisma.notification.findUnique({ where: { id } });
+    const notif = await db.withRetry(async (prisma) => 
+      prisma.notification.findUnique({ where: { id } })
+    );
     if (!notif || notif.userId !== req.user.id) return res.status(404).json({ error: 'Not found' });
 
-    const updated = await prisma.notification.update({ where: { id }, data: { isRead: true } });
+    const updated = await db.withRetry(async (prisma) => 
+      prisma.notification.update({ where: { id }, data: { isRead: true } })
+    );
     res.json(updated);
   } catch (error) {
     console.error('Error marking notification read:', error);
@@ -39,7 +43,9 @@ export const markAllRead = async (req: AuthRequest, res: Response): Promise<Resp
   try {
     if (!req.user?.id) return res.status(401).json({ error: 'Unauthorized' });
 
-    await prisma.notification.updateMany({ where: { userId: req.user.id, isRead: false }, data: { isRead: true } });
+    await db.withRetry(async (prisma) => 
+      prisma.notification.updateMany({ where: { userId: req.user!.id, isRead: false }, data: { isRead: true } })
+    );
     res.json({ status: 'ok' });
   } catch (error) {
     console.error('Error marking all notifications read:', error);
@@ -53,7 +59,7 @@ export const createNotification = async (req: AuthRequest, res: Response): Promi
     const { userId, type, title, message, data } = req.body;
     if (!userId || !title || !message) return res.status(400).json({ error: 'Missing fields' });
 
-    const notif = await prisma.notification.create({
+    const notif = await db.withRetry(async (prisma) => prisma.notification.create({
       data: {
         userId: userId ,
         type: type || 'SYSTEM',
@@ -61,7 +67,7 @@ export const createNotification = async (req: AuthRequest, res: Response): Promi
         message,
         data: data || {}
       }
-    });
+    }));
 
     // emit in real-time
     try {

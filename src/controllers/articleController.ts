@@ -1,5 +1,5 @@
 import { Request, Response } from 'express'
-import { prisma } from '../index'
+import { db } from '../index'
 import axios from 'axios'
 import { randomUUID } from 'crypto'
 
@@ -30,7 +30,7 @@ export const createArticle = async (req: Request, res: Response) => {
     let source = null
     try { source = (new URL(url)).hostname } catch(e) { /* ignore */ }
 
-    const art = await prisma.article.create({ data: {
+    const art = await db.withRetry(async (prisma) => prisma.article.create({ data: {
       id: randomUUID(),
       url,
       title: meta.title || url,
@@ -38,7 +38,7 @@ export const createArticle = async (req: Request, res: Response) => {
       imageUrl: meta.image || null,
       source: source || null,
       updatedAt: new Date()
-    } })
+    } }))
 
     return res.json(art)
   } catch (err) {
@@ -49,7 +49,9 @@ export const createArticle = async (req: Request, res: Response) => {
 
 export const listArticles = async (_req: Request, res: Response) => {
   try {
-    const list = await prisma.article.findMany({ orderBy: { createdAt: 'desc' }, take: 50 })
+    const list = await db.withRetry(async (prisma) => 
+      prisma.article.findMany({ orderBy: { createdAt: 'desc' }, take: 50 })
+    )
     return res.json(list)
   } catch (err) {
     console.error('listArticles', err)
@@ -59,7 +61,9 @@ export const listArticles = async (_req: Request, res: Response) => {
 
 export const getLatestArticle = async (_req: Request, res: Response) => {
   try {
-    const art = await prisma.article.findFirst({ orderBy: { createdAt: 'desc' } })
+    const art = await db.withRetry(async (prisma) => 
+      prisma.article.findFirst({ orderBy: { createdAt: 'desc' } })
+    )
     return res.json(art)
   } catch (err) {
     console.error('getLatestArticle', err)

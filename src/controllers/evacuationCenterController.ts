@@ -1,5 +1,5 @@
 import { Response } from 'express';
-import { prisma } from '../index';
+import { db } from '../index';
 import { AuthRequest } from '../types/custom';
 import { randomUUID } from 'crypto';
 
@@ -7,7 +7,7 @@ export const createEvacuationCenter = async (req: AuthRequest, res: Response) =>
   try {
     const { name, address, capacity, location, contactNumber, facilities } = req.body;
     
-    const center = await prisma.evacuationCenter.create({
+    const center = await db.withRetry(async (prisma) => prisma.evacuationCenter.create({
       data: {
         id: randomUUID(),
         name,
@@ -20,7 +20,7 @@ export const createEvacuationCenter = async (req: AuthRequest, res: Response) =>
         isActive: true,
         updatedAt: new Date()
       }
-    });
+    }));
     
     res.status(201).json(center);
   } catch (error) {
@@ -32,7 +32,7 @@ export const createEvacuationCenter = async (req: AuthRequest, res: Response) =>
 // Get all evacuation centers
 export const getEvacuationCenters = async (_req: AuthRequest, res: Response) => {
   try {
-    const centers = await prisma.evacuationCenter.findMany({
+    const centers = await db.withRetry(async (prisma) => prisma.evacuationCenter.findMany({
       select: {
         id: true,
         name: true,
@@ -53,7 +53,7 @@ export const getEvacuationCenters = async (_req: AuthRequest, res: Response) => 
         createdAt: true,
         updatedAt: true
       }
-    });
+    }));
     res.json(centers);
   } catch (error) {
     console.error('Get Evacuation Centers error:', error);

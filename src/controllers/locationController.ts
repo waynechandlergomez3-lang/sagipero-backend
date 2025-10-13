@@ -1,5 +1,5 @@
 import { Response } from 'express';
-import { prisma } from '../index';
+import { db } from '../index';
 import { AuthRequest } from '../types/custom';
 import { getIO } from '../realtime';
 import { randomUUID } from 'crypto';
@@ -13,11 +13,11 @@ export const updateLocation = async (req: AuthRequest, res: Response): Promise<v
       return;
     }
 
-    const loc = await prisma.location.upsert({
+    const loc = await db.withRetry(async (prisma) => prisma.location.upsert({
       where: { userId },
       update: { latitude: Number(latitude), longitude: Number(longitude) },
       create: { id: randomUUID(), userId, latitude: Number(latitude), longitude: Number(longitude), updatedAt: new Date() }
-    });
+    }));
 
     // Emit location change
     try { getIO().emit('location_changed', { userId, latitude: loc.latitude, longitude: loc.longitude }); } catch (e) { }
@@ -35,11 +35,11 @@ export const getActiveUserCount = async (_req: AuthRequest, res: Response): Prom
   try {
     // Get count of locations updated in the last 5 minutes
     const cutoff = new Date(Date.now() - 5 * 60 * 1000);
-    const count = await prisma.location.count({
+    const count = await db.withRetry(async (prisma) => prisma.location.count({
       where: {
         updatedAt: { gte: cutoff }
       }
-    });
+    }));
     res.json({ count });
     return;
   } catch (error) {

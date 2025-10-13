@@ -1,12 +1,14 @@
 import { Response } from 'express'
-import { prisma } from '../index'
+import { db } from '../index'
 import { AuthRequest } from '../types/custom'
 import { randomUUID } from 'crypto'
 
 // List weather alerts (public to admin only)
 export const listWeatherAlerts = async (_req: AuthRequest, res: Response) => {
   try{
-    const alerts = await prisma.weatherAlert.findMany({ orderBy: { createdAt: 'desc' } })
+    const alerts = await db.withRetry(async (prisma) => 
+      prisma.weatherAlert.findMany({ orderBy: { createdAt: 'desc' } })
+    )
     return res.json(alerts)
   }catch(err){
     console.error('listWeatherAlerts', err)
@@ -35,7 +37,7 @@ export const createWeatherAlert = async (req: AuthRequest, res: Response) => {
     }
   }catch(e){ /* ignore */ }
 
-  const wa = await prisma.weatherAlert.create({ data: { 
+  const wa = await db.withRetry(async (prisma) => prisma.weatherAlert.create({ data: { 
     id: randomUUID(),
     type: 'WEATHER',
     severity: 'MEDIUM',
@@ -49,13 +51,17 @@ export const createWeatherAlert = async (req: AuthRequest, res: Response) => {
     hourlyIndexes: hourlyIndexes || [], 
     daily: !!daily,
     updatedAt: new Date()
-  } })
+  } }))
 
     // create notification records for all users and send push
-    const users = await prisma.user.findMany({ select: { id: true } })
+    const users = await db.withRetry(async (prisma) => 
+      prisma.user.findMany({ select: { id: true } })
+    )
     const notifs = []
     for(const u of users){
-      const n = await prisma.notification.create({ data: { userId: u.id , type: 'WEATHER', title, message, data: { weatherAlertId: wa.id, meta: payloadMeta } } })
+      const n = await db.withRetry(async (prisma) => 
+        prisma.notification.create({ data: { userId: u.id , type: 'WEATHER', title, message, data: { weatherAlertId: wa.id, meta: payloadMeta } } })
+      )
       notifs.push(n)
       // emit via realtime
       try{ const { getIO } = require('../realtime'); const io = getIO(); io.to(`user_${u.id}`).emit('notification:new', n) }catch(e){/* ignore */}
@@ -109,7 +115,9 @@ export const createWeatherAlert = async (req: AuthRequest, res: Response) => {
 export const deleteWeatherAlert = async (req: AuthRequest, res: Response) => {
   try{
     const { id } = req.params
-    await prisma.weatherAlert.delete({ where: { id } })
+    await db.withRetry(async (prisma) => 
+      prisma.weatherAlert.delete({ where: { id } })
+    )
     return res.json({ status: 'ok' })
   }catch(err){ console.error('deleteWeatherAlert', err); return res.status(500).json({ error: 'failed' }) }
 }
