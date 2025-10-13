@@ -106,25 +106,31 @@ export const createUserByAdmin = async (req: AuthRequest, res: Response): Promis
     // Create user with a random temporary password so Prisma validation passes if password is required.
     const tempPassword = Math.random().toString(36).slice(2, 10);
 
+    console.log('createUserByAdmin: creating user with data:', {
+      name, email, phone, address, barangay, role, responderStatus, bloodType,
+      emergencyContactName, emergencyContactPhone, emergencyContactRelation,
+      medicalConditions, allergies, specialCircumstances
+    });
+
       const user = await db.withRetry(async (client) => {
         return await client.user.create({
           data: {
             id: randomUUID(),
             name,
             email,
-            phone,
-            address,
-            barangay,
+            phone: phone || null,
+            address: address || null,
+            barangay: barangay || null,
             role: role || 'RESIDENT',
             responderStatus: responderStatus || 'OFFLINE',
-               password: await bcrypt.hash(tempPassword, 10),
+            password: await bcrypt.hash(tempPassword, 10),
             bloodType: bloodType || null,
             emergencyContactName: emergencyContactName || null,
             emergencyContactPhone: emergencyContactPhone || null,
             emergencyContactRelation: emergencyContactRelation || null,
-      medicalConditions: medicalConditions || [],
-      allergies: allergies || [],
-      specialCircumstances: (specialCircumstances && specialCircumstances.length>0) ? specialCircumstances : ['NONE'],
+            medicalConditions: medicalConditions || [],
+            allergies: allergies || [],
+            specialCircumstances: (specialCircumstances && specialCircumstances.length>0) ? specialCircumstances : ['NONE'],
             updatedAt: new Date()
           }
         });
@@ -352,23 +358,27 @@ export const updateUserById = async (req: AuthRequest, res: Response): Promise<v
     } = req.body;
 
     const data: any = {};
-    if (name) data.name = name;
-    if (phone) data.phone = phone;
-    if (address) data.address = address;
-    if (barangay) data.barangay = barangay;
-    if (role) data.role = role;
-    if (responderStatus) data.responderStatus = responderStatus;
-    if (bloodType) data.bloodType = bloodType;
-    if (emergencyContactName) data.emergencyContactName = emergencyContactName;
-    if (emergencyContactPhone) data.emergencyContactPhone = emergencyContactPhone;
-    if (emergencyContactRelation) data.emergencyContactRelation = emergencyContactRelation;
-    if (medicalConditions) data.medicalConditions = medicalConditions;
-    if (allergies) data.allergies = allergies;
-    if (specialCircumstances) data.specialCircumstances = specialCircumstances;
+    if (name !== undefined) data.name = name;
+    if (phone !== undefined) data.phone = phone;
+    if (address !== undefined) data.address = address;
+    if (barangay !== undefined) data.barangay = barangay;
+    if (role !== undefined) data.role = role;
+    if (responderStatus !== undefined) data.responderStatus = responderStatus;
+    if (bloodType !== undefined) data.bloodType = bloodType;
+    if (emergencyContactName !== undefined) data.emergencyContactName = emergencyContactName;
+    if (emergencyContactPhone !== undefined) data.emergencyContactPhone = emergencyContactPhone;
+    if (emergencyContactRelation !== undefined) data.emergencyContactRelation = emergencyContactRelation;
+    if (medicalConditions !== undefined) data.medicalConditions = medicalConditions;
+    if (allergies !== undefined) data.allergies = allergies;
+    if (specialCircumstances !== undefined) data.specialCircumstances = specialCircumstances;
+
+    console.log('updateUserById: updating user', id, 'with data:', data);
 
     const user = await db.withRetry(async (client) => {
       return await client.user.update({ where: { id }, data, select: {
-        id: true, email: true, name: true, role: true, phone: true, barangay: true, responderStatus: true
+        id: true, email: true, name: true, role: true, phone: true, barangay: true, responderStatus: true,
+        address: true, bloodType: true, emergencyContactName: true, emergencyContactPhone: true,
+        emergencyContactRelation: true, medicalConditions: true, allergies: true, specialCircumstances: true
       }});
     });
     res.json(user);
