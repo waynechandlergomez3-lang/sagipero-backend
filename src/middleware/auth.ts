@@ -34,17 +34,23 @@ export const auth = async (req: AuthRequest, res: Response, next: NextFunction):
     console.log('🔍 Looking up user with ID:', decoded.userId);
     
     try {
-      const user = await db.withRetry(async (prisma) => {
-        console.log('📡 Database query starting...');
-        const result = await prisma.user.findUnique({
-          where: { id: decoded.userId },
-          omit: {
-            password: true
-          }
-        });
-        console.log('📡 Database query completed:', result ? 'User found' : 'User not found');
-        return result;
+      // Force database connection establishment
+      console.log('🔌 Getting database client...');
+      const client = await db.getClient();
+      console.log('✅ Database client obtained');
+      
+      // Ensure connection is active
+      await client.$connect();
+      console.log('✅ Database connection active');
+      
+      console.log('📡 Database query starting...');
+      const user = await client.user.findUnique({
+        where: { id: decoded.userId },
+        omit: {
+          password: true
+        }
       });
+      console.log('📡 Database query completed:', user ? 'User found' : 'User not found');
 
       console.log('🔍 User lookup result:', user ? `Found: ${user.email}` : 'Not found');
 
@@ -60,6 +66,8 @@ export const auth = async (req: AuthRequest, res: Response, next: NextFunction):
       return;
       
     } catch (dbError) {
+      console.error('🔄 Database connection issue detected, attempting reconnection...');
+      console.error('❌ Database reconnection failed:', dbError);
       console.error('💥 Database error in auth middleware:', dbError);
       res.status(401).json({ error: 'Please authenticate' });
       return;

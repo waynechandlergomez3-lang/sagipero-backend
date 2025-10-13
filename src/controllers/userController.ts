@@ -4,6 +4,7 @@ import bcrypt from 'bcryptjs';
 import { generateToken } from '../utils/jwt';
 import { AuthRequest } from '../types/custom';
 import { randomUUID } from 'crypto';
+import { db } from '../services/database';
 
 // CRITICAL FIX: Force correct DATABASE_URL to use transaction pooler (port 6543)
 const CORRECT_DATABASE_URL = "postgresql://postgres.vsrvdgzvyhlpnnvktuwn:Sagipero081@aws-1-us-east-2.pooler.supabase.com:6543/postgres";
@@ -174,10 +175,7 @@ export const login = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { email, password } = req.body;
 
-    // Ensure healthy database connection before critical operations
-    const healthyPrisma = await ensureConnection();
-
-    const user = await healthyPrisma.user.findUnique({
+    const user = await db.withRetry(async (prisma) => prisma.user.findUnique({
       where: { email },
       select: {
         id: true,
@@ -196,7 +194,7 @@ export const login = async (req: AuthRequest, res: Response): Promise<void> => {
         emergencyContactPhone: true,
         emergencyContactRelation: true
       }
-    });
+    }));
 
     if (!user) {
       res.status(401).json({ error: 'Invalid credentials' });
