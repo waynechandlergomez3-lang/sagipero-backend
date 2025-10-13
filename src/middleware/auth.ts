@@ -1,6 +1,6 @@
 import { Response, NextFunction } from 'express';
 import { verifyToken } from '../utils/jwt';
-import { prisma } from '../index';
+import { db } from '../index';
 
 import { AuthRequest } from '../types/custom';
 
@@ -24,12 +24,12 @@ export const auth = async (req: AuthRequest, res: Response, next: NextFunction) 
       throw new Error('Invalid token');
     }
 
-    const user = await prisma.user.findUnique({
+    const user = await db.withRetry(async (prisma) => prisma.user.findUnique({
       where: { id: decoded.userId },
       omit: {
         password: true
       }
-    });
+    }));
     console.log('User lookup result:', user);
 
     if (!user) {

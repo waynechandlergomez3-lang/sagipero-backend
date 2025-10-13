@@ -1,6 +1,6 @@
 import { Server, Socket } from 'socket.io';
 import { verifyToken } from './utils/jwt';
-import { prisma } from './index';
+import { db } from './index';
 
 let io: Server | null = null;
 
@@ -15,10 +15,10 @@ export const setIO = (server: Server) => {
       }
 
       const decoded = verifyToken(token);
-      const user = await prisma.user.findUnique({
+      const user = await db.withRetry(async (prisma) => prisma.user.findUnique({
         where: { id: decoded.userId },
         select: { id: true, role: true }
-      });
+      }));
 
       if (!user) {
         return next(new Error('User not found'));
@@ -55,15 +55,19 @@ export const setIO = (server: Server) => {
 
         // Update emergency's responderLocation and set responderId. Only set status to IN_PROGRESS
         // if the emergency is not already ARRIVED or RESOLVED (avoid clobbering ARRIVED).
-        const existing = await prisma.emergency.findUnique({ where: { id: emergencyId }, select: { status: true } });
+        const existing = await db.withRetry(async (prisma) => 
+          prisma.emergency.findUnique({ where: { id: emergencyId }, select: { status: true } })
+        );
         const shouldSetInProgress = existing && existing.status !== 'ARRIVED' && existing.status !== 'RESOLVED';
-        await prisma.emergency.update({
+        await db.withRetry(async (prisma) => prisma.emergency.update({
           where: { id: emergencyId },
           data: { responderLocation: location, responderId: user.id, ...(shouldSetInProgress ? { status: 'IN_PROGRESS' } : {}) }
-        });
+        }));
 
         // Fetch emergency to get userId
-        const emergency = await prisma.emergency.findUnique({ where: { id: emergencyId } });
+        const emergency = await db.withRetry(async (prisma) => 
+          prisma.emergency.findUnique({ where: { id: emergencyId } })
+        );
         if (emergency) {
           socket.join(`user_${emergency.userId}`); // ensure responder socket also joins resident room to emit
           io?.to(`user_${emergency.userId}`).emit('emergency:responderLocation', { emergencyId, location });
@@ -83,7 +87,9 @@ export const setIO = (server: Server) => {
         if (!status) return;
         // persist to user table
   // Use raw SQL to set responderStatus until Prisma client is regenerated
-  await prisma.$executeRaw`UPDATE "User" SET "responderStatus" = ${status} WHERE id = ${user.id}`;
+  await db.withRetry(async (prisma) => 
+    prisma.$executeRaw`UPDATE "User" SET "responderStatus" = ${status} WHERE id = ${user.id}`
+  );
         // broadcast updated responder availability to admin channel
         io?.to('admin_channel').emit('responder:status', { responderId: user.id, status });
       } catch (err) {
@@ -101,11 +107,15 @@ export const setIO = (server: Server) => {
         const incomingType = location && (location.type || location?.type);
         if (incomingType && typeof incomingType === 'string') {
           // fetch current emergency
-          const existing = await prisma.emergency.findUnique({ where: { id: emergencyId } });
+          const existing = await db.withRetry(async (prisma) => 
+            prisma.emergency.findUnique({ where: { id: emergencyId } })
+          );
           if (existing && existing.type === 'SOS' && existing.id === emergencyId) {
             const normalized = incomingType.toUpperCase();
             if (['MEDICAL','FIRE','FLOOD','EARTHQUAKE'].includes(normalized)) {
-              await prisma.emergency.update({ where: { id: emergencyId }, data: { type: normalized } });
+              await db.withRetry(async (prisma) => 
+                prisma.emergency.update({ where: { id: emergencyId }, data: { type: normalized } })
+              );
               // notify admin channel about updated type
               io?.to('admin_channel').emit('emergency:updated', { emergencyId, type: normalized });
             }

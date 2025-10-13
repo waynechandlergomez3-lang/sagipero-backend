@@ -1,6 +1,6 @@
 import { Router, Response } from 'express';
 import { signup, login, getProfile, updateProfile, updateSituationStatus, listUsers, updateUserById, deleteUserById, toggleResponderByAdmin, createUserByAdmin, getUserById } from '../controllers/userController';
-import { prisma } from '../index';
+import { db } from '../index';
 import { AuthRequest } from '../types/custom';
 import { auth } from '../middleware/auth';
 import { body } from 'express-validator';
@@ -55,7 +55,9 @@ router.post('/status', auth, [
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
     const { status } = req.body;
   // Persist status using Prisma client
-  await prisma.user.update({ where: { id: userId }, data: { responderStatus: status } });
+  await db.withRetry(async (prisma) => 
+    prisma.user.update({ where: { id: userId }, data: { responderStatus: status } })
+  );
     // emit to admin channel
     try { const { getIO } = require('../realtime'); getIO().to('admin_channel').emit('responder:status', { responderId: userId, status }); } catch (e) {}
     return res.json({ status: 'ok' });
