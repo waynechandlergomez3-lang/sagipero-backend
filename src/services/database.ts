@@ -41,7 +41,7 @@ class DatabaseService {
     }
   }
 
-  // Connection health check with automatic reconnection
+  // Connection health check with automatic reconnection - NO RAW SQL to avoid prepared statement conflicts
   private async ensureHealthyConnection(): Promise<PrismaClient> {
     const now = Date.now();
     
@@ -51,8 +51,8 @@ class DatabaseService {
     }
     
     try {
-      // Quick health check
-      await this.prisma.$queryRaw`SELECT 1`;
+      // Simple connection validation without prepared statements - just check if client is connected
+      await this.prisma.$connect();
       this.lastHealthCheck = now;
       return this.prisma;
     } catch (error) {
@@ -62,7 +62,6 @@ class DatabaseService {
         // Disconnect and reconnect
         await this.prisma.$disconnect();
         await this.prisma.$connect();
-        await this.prisma.$queryRaw`SELECT 1`;
         
         this.lastHealthCheck = now;
         console.log('✅ Database reconnection successful');
