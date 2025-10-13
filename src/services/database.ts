@@ -8,6 +8,12 @@ class DatabaseService {
   private readonly HEALTH_CHECK_INTERVAL = 30000; // 30 seconds
 
   private constructor() {
+    this.createNewClient();
+    // Initialize connection
+    this.initialize();
+  }
+
+  private createNewClient() {
     this.prisma = new PrismaClient({
       datasources: {
         db: {
@@ -17,9 +23,6 @@ class DatabaseService {
       log: ['error'],
       errorFormat: 'minimal'
     });
-
-    // Initialize connection
-    this.initialize();
   }
 
   public static getInstance(): DatabaseService {
@@ -78,7 +81,7 @@ class DatabaseService {
 
   // Method for critical operations with retry logic
   public async withRetry<T>(operation: (prisma: PrismaClient) => Promise<T>): Promise<T> {
-    const maxRetries = 2;
+    const maxRetries = 3;
     let lastError: any;
 
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
@@ -90,18 +93,24 @@ class DatabaseService {
         const errorMessage = error instanceof Error ? error.message : String(error);
         
         if (errorMessage.includes('prepared statement') && attempt < maxRetries) {
-          console.warn(`🔄 Prepared statement error (attempt ${attempt}/${maxRetries}), retrying...`);
+          console.warn(`🔄 Prepared statement error (attempt ${attempt}/${maxRetries}), creating fresh connection...`);
           
-          // Force reconnection on prepared statement errors
+          // Create completely fresh client to avoid prepared statement conflicts
           try {
             await this.prisma.$disconnect();
+            this.createNewClient();
             await this.prisma.$connect();
+            
+            // Reset health check timer to force immediate validation
+            this.lastHealthCheck = 0;
+            
+            console.log(`✅ Fresh database connection created for retry ${attempt}`);
           } catch (reconnectError) {
-            console.warn('Reconnection failed during retry:', reconnectError);
+            console.warn('Fresh connection creation failed during retry:', reconnectError);
           }
           
-          // Wait a bit before retry
-          await new Promise(resolve => setTimeout(resolve, 100 * attempt));
+          // Wait a bit before retry with exponential backoff
+          await new Promise(resolve => setTimeout(resolve, 200 * attempt));
           continue;
         }
         
