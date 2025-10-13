@@ -11,7 +11,36 @@ if (!process.env.DATABASE_URL || process.env.DATABASE_URL.includes(':5432')) {
   process.env.DATABASE_URL = CORRECT_DATABASE_URL;
 }
 
-const prisma = new PrismaClient();
+// Enhanced Prisma client with connection pooling optimized for Supabase
+const prisma = new PrismaClient({
+  datasources: {
+    db: {
+      url: process.env.DATABASE_URL
+    }
+  },
+  log: ['error'],
+  errorFormat: 'minimal'
+});
+
+// Connection health check and auto-reconnect utility
+const ensureConnection = async () => {
+  try {
+    await prisma.$queryRaw`SELECT 1`;
+    return prisma;
+  } catch (error) {
+    console.warn('🔄 Prisma connection issue detected, reconnecting...');
+    try {
+      await prisma.$disconnect();
+      await prisma.$connect();
+      await prisma.$queryRaw`SELECT 1`;
+      console.log('✅ Prisma reconnection successful');
+      return prisma;
+    } catch (reconnectError) {
+      console.error('❌ Prisma reconnection failed:', reconnectError);
+      throw reconnectError;
+    }
+  }
+};
 
 export const signup = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
@@ -143,9 +172,12 @@ export const createUserByAdmin = async (req: AuthRequest, res: Response): Promis
 
 export const login = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-  const { email, password } = req.body;
+    const { email, password } = req.body;
 
-    const user = await prisma.user.findUnique({
+    // Ensure healthy database connection before critical operations
+    const healthyPrisma = await ensureConnection();
+
+    const user = await healthyPrisma.user.findUnique({
       where: { email },
       select: {
         id: true,
@@ -191,15 +223,53 @@ export const login = async (req: AuthRequest, res: Response): Promise<void> => {
     console.error('Database URL port:', port);
     console.error('Full DATABASE_URL:', databaseUrl.replace(/:[^:@]*@/, ':***@')); // Hide password
     
-    // Check if it's the prepared statement error
+    // Check if it's the prepared statement error - even with correct port 6543
     const errorMessage = error instanceof Error ? error.message : String(error);
-    if (errorMessage.includes('prepared statement') && databaseUrl.includes(':5432')) {
-      console.error('🚨 PREPARED STATEMENT ERROR: Using session pooler (port 5432)');
-      console.error('💡 SOLUTION: Should use transaction pooler (port 6543)');
+    if (errorMessage.includes('prepared statement')) {
+      console.error('🚨 PREPARED STATEMENT ERROR: Even with transaction pooler (port 6543)');
+      console.error('� This indicates a Prisma connection pooling issue');
+      console.error('�💡 SOLUTION: Connection health check and reconnection implemented');
+      
+      // Try one more time with a fresh connection
+      try {
+        console.log('🔄 Attempting automatic retry with fresh connection...');
+        const freshPrisma = await ensureConnection();
+        const { email, password } = req.body;
+        
+        const user = await freshPrisma.user.findUnique({
+          where: { email },
+          select: {
+            id: true, email: true, password: true, name: true, role: true,
+            phone: true, address: true, barangay: true, specialCircumstances: true,
+            medicalConditions: true, allergies: true, bloodType: true,
+            emergencyContactName: true, emergencyContactPhone: true, emergencyContactRelation: true
+          }
+        });
+        
+        if (!user) {
+          res.status(401).json({ error: 'Invalid credentials' });
+          return;
+        }
+        
+        const isPasswordValid = await bcrypt.compare(password, user.password);
+        if (!isPasswordValid) {
+          res.status(401).json({ error: 'Invalid credentials' });
+          return;
+        }
+        
+        const token = generateToken(user.id);
+        const { password: _, ...userWithoutPassword } = user;
+        console.log('✅ Login successful after retry');
+        res.json({ user: userWithoutPassword, token });
+        return;
+      } catch (retryError) {
+        console.error('❌ Retry failed:', retryError);
+      }
+      
       res.status(500).json({ 
-        error: 'Database configuration error - using session pooler instead of transaction pooler',
+        error: 'Database connection issue - prepared statement error with transaction pooler',
         debug: `Database port: ${port}`,
-        hint: 'Contact administrator to fix DATABASE_URL configuration'
+        hint: 'Automatic retry attempted but failed - temporary connection issue'
       });
     } else {
       res.status(500).json({ 

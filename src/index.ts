@@ -3,6 +3,7 @@ import cors from 'cors';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
 import { PrismaClient } from './generated/prisma';
+import { db } from './services/database';
 import dotenv from 'dotenv';
 import userRoutes from './routes/userRoutes';
 import emergencyRoutes from './routes/emergencyRoutes';
@@ -49,8 +50,11 @@ if (!process.env.DATABASE_URL || process.env.DATABASE_URL.includes(':5432')) {
 // Create Express app
 const app = express();
 
-// Initialize Prisma Client
+// For backward compatibility, export prisma client (but prefer using db service)
 export const prisma = new PrismaClient();
+
+// Export the enhanced database service for new code
+export { db };
 
 // Middleware
 const corsOptions = {
