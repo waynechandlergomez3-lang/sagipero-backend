@@ -2,13 +2,13 @@ import { Response } from 'express'
 import { db } from '../index'
 import { AuthRequest } from '../types/custom'
 import { randomUUID } from 'crypto'
+import { rawDb } from '../services/rawDatabase'
 
 // List weather alerts (public to admin only)
 export const listWeatherAlerts = async (_req: AuthRequest, res: Response) => {
   try{
-    const alerts = await db.withRetry(async (prisma) => 
-      prisma.weatherAlert.findMany({ orderBy: { createdAt: 'desc' } })
-    )
+    console.log('listWeatherAlerts: using raw database service for listing weather alerts');
+    const alerts = await rawDb.listWeatherAlerts();
     return res.json(alerts)
   }catch(err){
     console.error('listWeatherAlerts', err)
@@ -54,9 +54,8 @@ export const createWeatherAlert = async (req: AuthRequest, res: Response) => {
   } }))
 
     // create notification records for all users and send push
-    const users = await db.withRetry(async (prisma) => 
-      prisma.user.findMany({ select: { id: true } })
-    )
+    console.log('createWeatherAlert: using raw database service for listing all users');
+    const users = await rawDb.listAllUsers();
     const notifs = []
     for(const u of users){
       const n = await db.withRetry(async (prisma) => 

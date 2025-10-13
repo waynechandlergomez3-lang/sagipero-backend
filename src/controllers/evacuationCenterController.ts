@@ -2,6 +2,7 @@ import { Response } from 'express';
 import { db } from '../index';
 import { AuthRequest } from '../types/custom';
 import { randomUUID } from 'crypto';
+import { rawDb } from '../services/rawDatabase';
 
 export const createEvacuationCenter = async (req: AuthRequest, res: Response) => {
   try {
@@ -32,28 +33,8 @@ export const createEvacuationCenter = async (req: AuthRequest, res: Response) =>
 // Get all evacuation centers
 export const getEvacuationCenters = async (_req: AuthRequest, res: Response) => {
   try {
-    const centers = await db.withRetry(async (prisma) => prisma.evacuationCenter.findMany({
-      select: {
-        id: true,
-        name: true,
-        address: true,
-        capacity: true,
-        currentCount: true,
-        location: true,
-        contactNumber: true,
-        facilities: true,
-        isActive: true,
-        Emergency: {
-          select: {
-            id: true,
-            type: true,
-            status: true
-          }
-        },
-        createdAt: true,
-        updatedAt: true
-      }
-    }));
+    console.log('getEvacuationCenters: using raw database service for listing evacuation centers');
+    const centers = await rawDb.listEvacuationCenters();
     res.json(centers);
   } catch (error) {
     console.error('Get Evacuation Centers error:', error);

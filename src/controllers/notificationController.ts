@@ -1,16 +1,14 @@
 import { Response } from 'express';
 import { db } from '../index';
 import { AuthRequest } from '../types/custom';
+import { rawDb } from '../services/rawDatabase';
 
 export const listNotifications = async (req: AuthRequest, res: Response): Promise<Response | void> => {
   try {
     if (!req.user?.id) return res.status(401).json({ error: 'Unauthorized' });
 
-    const notifications = await db.withRetry(async (prisma) => prisma.notification.findMany({
-      where: { userId: req.user!.id },
-      orderBy: { createdAt: 'desc' },
-      select: { id: true, type: true, title: true, message: true, data: true, isRead: true, createdAt: true }
-    }));
+    console.log('listNotifications: using raw database service for listing notifications');
+    const notifications = await rawDb.listNotifications(req.user.id);
 
     res.json(notifications);
   } catch (error) {
@@ -24,9 +22,9 @@ export const markAsRead = async (req: AuthRequest, res: Response): Promise<Respo
     const { id } = req.params;
     if (!req.user?.id) return res.status(401).json({ error: 'Unauthorized' });
 
-    const notif = await db.withRetry(async (prisma) => 
-      prisma.notification.findUnique({ where: { id } })
-    );
+    console.log('markAsRead: using raw database service for checking notification');
+    const notif = await rawDb.getNotificationById(id);
+    
     if (!notif || notif.userId !== req.user.id) return res.status(404).json({ error: 'Not found' });
 
     const updated = await db.withRetry(async (prisma) => 

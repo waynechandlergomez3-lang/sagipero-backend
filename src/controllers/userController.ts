@@ -11,11 +11,8 @@ export const signup = async (req: AuthRequest, res: Response): Promise<void> => 
   try {
   const { email, password, name, phone, role = UserRole.RESIDENT, address, barangay } = req.body;
 
-    const existingUser = await db.withRetry(async (client) => {
-      return await client.user.findUnique({
-        where: { email }
-      });
-    });
+    console.log('signup: using raw database service for checking existing user');
+    const existingUser = await rawDb.getUserByEmail(email);
 
     if (existingUser) {
       res.status(400).json({ error: 'Email already in use' });
@@ -165,43 +162,30 @@ export const login = async (req: AuthRequest, res: Response): Promise<void> => {
 
 export const getProfile = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const user = await db.withRetry(async (client) => {
-      return await client.user.findUnique({
-        where: { id: req.user?.id },
-        select: {
-          id: true,
-          email: true,
-          name: true,
-          role: true,
-          phone: true,
-    address: true,
-    barangay: true,
-          Location: {
-            select: {
-              latitude: true,
-              longitude: true,
-              updatedAt: true
-            }
-          },
-          specialCircumstances: true,
-          medicalConditions: true,
-          allergies: true,
-          bloodType: true,
-          emergencyContactName: true,
-          emergencyContactPhone: true,
-          emergencyContactRelation: true,
-          createdAt: true,
-          updatedAt: true
-        }
-      });
-    });
+    console.log('getProfile: using raw database service for fetching user profile');
+    const user = await rawDb.getUserProfile(req.user?.id!);
 
     if (!user) {
       res.status(404).json({ error: 'User not found' });
       return;
     }
 
-    res.json(user);
+    // Transform the flat result to match expected nested structure
+    const transformedUser = {
+      ...user,
+      Location: user.latitude && user.longitude ? {
+        latitude: user.latitude,
+        longitude: user.longitude,
+        updatedAt: user.locationUpdatedAt
+      } : null
+    };
+
+    // Remove the flat location fields
+    delete transformedUser.latitude;
+    delete transformedUser.longitude;
+    delete transformedUser.locationUpdatedAt;
+
+    res.json(transformedUser);
   } catch (error) {
     console.error('Get profile error:', error);
     res.status(500).json({ error: 'Error fetching profile' });
@@ -335,25 +319,9 @@ export const listUsers = async (req: AuthRequest, res: Response): Promise<Respon
 
     // Optional role filter (e.g. ?role=RESPONDER) to only return responders
     const roleFilter = typeof req.query.role === 'string' ? req.query.role : undefined
-    const where = roleFilter ? { role: roleFilter as UserRole } : undefined
 
-    const users = await db.withRetry(async (client) => {
-      return await client.user.findMany({
-        where,
-        orderBy: { createdAt: 'desc' },
-        select: {
-          id: true,
-          email: true,
-          name: true,
-          role: true,
-          phone: true,
-          responderStatus: true,
-          situationStatus: true,
-          barangay: true,
-          createdAt: true
-        }
-      });
-    });
+    console.log('listUsers: using raw database service for listing users');
+    const users = await rawDb.listUsers(roleFilter);
 
   console.log('listUsers: found', (users || []).length, 'users');
   res.json(users);
@@ -414,31 +382,10 @@ export const getUserById = async (req: AuthRequest, res: Response): Promise<void
   try {
     if (!req.user || req.user.role !== 'ADMIN') { res.status(403).json({ error: 'Forbidden' }); return; }
     const { id } = req.params as any;
-    const user = await db.withRetry(async (client) => {
-      return await client.user.findUnique({
-        where: { id },
-        select: {
-        id: true,
-        email: true,
-        name: true,
-        role: true,
-        phone: true,
-        address: true,
-        barangay: true,
-        responderStatus: true,
-        situationStatus: true,
-        specialCircumstances: true,
-        medicalConditions: true,
-        allergies: true,
-        bloodType: true,
-        emergencyContactName: true,
-        emergencyContactPhone: true,
-        emergencyContactRelation: true,
-        createdAt: true,
-        updatedAt: true
-        }
-      });
-    });
+    
+    console.log('getUserById: using raw database service for fetching user by ID');
+    const user = await rawDb.getUserByIdAdmin(id);
+    
     if (!user) { res.status(404).json({ error: 'User not found' }); return; }
     res.json(user);
   } catch (err) {
@@ -466,9 +413,10 @@ export const toggleResponderByAdmin = async (req: AuthRequest, res: Response): P
   if (!req.user || req.user.role !== 'ADMIN') { res.status(403).json({ error: 'Forbidden' }); return; }
   const { userId } = req.body as any;
   if (!userId) { res.status(400).json({ error: 'Missing userId' }); return; }
-  const u = await db.withRetry(async (client) => {
-    return await client.user.findUnique({ where: { id: userId }, select: { id: true, responderStatus: true, role: true } });
-  });
+  
+  console.log('toggleResponderByAdmin: using raw database service for getting responder status');
+  const u = await rawDb.getResponderStatus(userId);
+  
   if (!u) { res.status(404).json({ error: 'User not found' }); return; }
   // only apply to responders (or set role to RESPONDER)
   const newStatus: ResponderStatus = u.responderStatus === 'AVAILABLE' ? 'OFFLINE' : 'AVAILABLE';

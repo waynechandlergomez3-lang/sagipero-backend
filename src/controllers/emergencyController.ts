@@ -5,6 +5,7 @@ import { AuthRequest } from '../types/custom';
 import pushStore from '../utils/pushStore';
 import push from '../utils/push';
 import { randomUUID } from 'crypto';
+import { rawDb } from '../services/rawDatabase';
 
 export const createEmergency = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
@@ -30,9 +31,8 @@ export const createEmergency = async (req: AuthRequest, res: Response): Promise<
     }
 
   // Fetch reporting user details so we can compute priority from their special/medical conditions
-  const reportingUser = await db.withRetry(async (prisma) => 
-    prisma.user.findUnique({ where: { id: userId }, select: { id: true, name: true, phone: true, specialCircumstances: true, medicalConditions: true } })
-  );
+  console.log('createEmergency: using raw database service for fetching user details');
+  const reportingUser = await rawDb.getUserForEmergency(userId);
 
   // For SOS or urgent typed requests, set base priority
   const urgentTypes = ['SOS','MEDICAL','FIRE','FLOOD','EARTHQUAKE'];
@@ -46,9 +46,8 @@ export const createEmergency = async (req: AuthRequest, res: Response): Promise<
   }
     
   // enforce one active emergency per user
-  const existing = await db.withRetry(async (prisma) => 
-    prisma.emergency.findFirst({ where: { userId, NOT: { status: EmergencyStatus.RESOLVED } } })
-  );
+  console.log('createEmergency: using raw database service for checking existing emergency');
+  const existing = await rawDb.getActiveEmergencyForUser(userId);
   if (existing) { res.status(400).json({ error: 'You already have an active emergency' }); return; }
 
   const emergency = await db.withRetry(async (prisma) => prisma.emergency.create({
@@ -114,9 +113,8 @@ export const createEmergency = async (req: AuthRequest, res: Response): Promise<
       // Notify admins and responders so staff get notified on their phones
       try {
         // find admin and responder users
-        const staff = await db.withRetry(async (prisma) => 
-          prisma.user.findMany({ where: { role: { in: ['ADMIN', 'RESPONDER'] } }, select: { id: true } })
-        );
+        console.log('createEmergency: using raw database service for getting staff users');
+        const staff = await rawDb.getStaffUsers();
         const staffIds = staff.map((s: any) => s.id);
         const allTokens = pushStore.listTokens();
         const staffTokens = allTokens.filter(t => staffIds.includes(t.userId)).map(t => t.token);
@@ -159,28 +157,10 @@ export const createEmergency = async (req: AuthRequest, res: Response): Promise<
 
 export const listEmergencies = async (_req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const emergencies = await db.withRetry(async (prisma) => prisma.emergency.findMany({
-      where: { NOT: { status: EmergencyStatus.RESOLVED } },
-      orderBy: { createdAt: 'desc' },
-      include: {
-        User_Emergency_userIdToUser: {
-          select: {
-            name: true,
-            phone: true,
-            role: true
-          }
-        },
-        User_Emergency_responderIdToUser: {
-          select: {
-            name: true,
-            phone: true,
-            role: true
-          }
-        }
-      }
-    }));
-  console.log('listEmergencies: found', (emergencies || []).length, 'records');
-  res.json(emergencies);
+    console.log('listEmergencies: using raw database service for listing emergencies');
+    const emergencies = await rawDb.listEmergencies();
+    console.log('listEmergencies: found', (emergencies || []).length, 'records');
+    res.json(emergencies);
   } catch (error) {
     console.error('List emergencies error:', error);
     res.status(500).json({ error: 'Unable to list emergencies' });
@@ -191,14 +171,15 @@ export const getEmergency = async (req: AuthRequest, res: Response): Promise<Res
   try {
     const { id } = req.params;
     if (!id) return res.status(400).json({ error: 'Missing emergency id' });
-    const emergency = await db.withRetry(async (prisma) => 
-      prisma.emergency.findUnique({ where: { id }, include: { User_Emergency_userIdToUser: true, User_Emergency_responderIdToUser: true } })
-    );
+    
+    console.log('getEmergency: using raw database service for fetching emergency');
+    const emergency = await rawDb.getEmergencyById(id);
+    
     if (!emergency) return res.status(404).json({ error: 'Emergency not found' });
 
     // Do not expose resolved emergencies to admins or responders via this endpoint
     const requesterRole = req.user?.role;
-    if ((requesterRole === 'ADMIN' || requesterRole === 'RESPONDER') && emergency.status === EmergencyStatus.RESOLVED) {
+    if ((requesterRole === 'ADMIN' || requesterRole === 'RESPONDER') && emergency.status === 'RESOLVED') {
       return res.status(404).json({ error: 'Emergency not found' });
     }
 
@@ -213,11 +194,10 @@ export const getLatestForUser = async (req: AuthRequest, res: Response): Promise
   try {
     const userId = req.user?.id;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
-    const emergency = await db.withRetry(async (prisma) => prisma.emergency.findFirst({
-      where: { userId, NOT: { status: EmergencyStatus.RESOLVED } },
-      orderBy: { createdAt: 'desc' },
-      include: { User_Emergency_userIdToUser: true, User_Emergency_responderIdToUser: true }
-    }));
+    
+    console.log('getLatestForUser: using raw database service for fetching latest emergency');
+    const emergency = await rawDb.getLatestEmergencyForUser(userId);
+    
     if (!emergency) return res.status(404).json({ error: 'No emergencies found' });
     return res.json(emergency);
   } catch (err) {
@@ -254,14 +234,19 @@ export const listPendingForResponder = async (req: AuthRequest, res: Response): 
     // Only responders should call this
     if (!req.user || req.user.role !== 'RESPONDER') return res.status(403).json({ error: 'Forbidden' });
 
-    const emergencies = await db.withRetry(async (prisma) => prisma.emergency.findMany({
-      where: { status: EmergencyStatus.PENDING },
-      orderBy: { createdAt: 'asc' },
-      include: { User_Emergency_userIdToUser: true }
-    }));
+    console.log('listPendingForResponder: using raw database service for listing pending emergencies');
+    const emergencies = await rawDb.listPendingEmergencies();
 
-    // Return basic info for responder to decide: type, address, location, createdAt, user
-    const simplified = emergencies.map((e: any) => ({ id: e.id, type: e.type, address: e.address, location: e.location, createdAt: e.createdAt, user: e.User_Emergency_userIdToUser, priority: e.priority }));
+    // Transform data to match expected format
+    const simplified = emergencies.map((e: any) => ({ 
+      id: e.id, 
+      type: e.type, 
+      address: e.address, 
+      location: e.location, 
+      createdAt: e.createdAt, 
+      user: { name: e.userName, phone: e.userPhone }, 
+      priority: e.priority 
+    }));
     return res.json(simplified);
   } catch (err) {
     console.error('List pending for responder error:', err);

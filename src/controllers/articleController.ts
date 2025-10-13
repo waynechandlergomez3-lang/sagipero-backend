@@ -2,6 +2,7 @@ import { Request, Response } from 'express'
 import { db } from '../index'
 import axios from 'axios'
 import { randomUUID } from 'crypto'
+import { rawDb } from '../services/rawDatabase'
 
 // Simple HTML meta extractor (no new deps)
 function extractMeta(html: string) {
@@ -49,9 +50,8 @@ export const createArticle = async (req: Request, res: Response) => {
 
 export const listArticles = async (_req: Request, res: Response) => {
   try {
-    const list = await db.withRetry(async (prisma) => 
-      prisma.article.findMany({ orderBy: { createdAt: 'desc' }, take: 50 })
-    )
+    console.log('listArticles: using raw database service for listing articles');
+    const list = await rawDb.listArticles();
     return res.json(list)
   } catch (err) {
     console.error('listArticles', err)
