@@ -5,6 +5,7 @@ import { generateToken } from '../utils/jwt';
 import { AuthRequest } from '../types/custom';
 import { randomUUID } from 'crypto';
 import { db } from '../services/database';
+import { rawDb } from '../services/rawDatabase';
 
 export const signup = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
@@ -144,42 +145,18 @@ export const login = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { email, password } = req.body;
 
-    const user = await db.withRetry(async (prisma) => prisma.user.findUnique({
-      where: { email },
-      select: {
-        id: true,
-        email: true,
-        password: true,
-        name: true,
-        role: true,
-        phone: true,
-        address: true,
-        barangay: true,
-        specialCircumstances: true,
-        medicalConditions: true,
-        allergies: true,
-        bloodType: true,
-        emergencyContactName: true,
-        emergencyContactPhone: true,
-        emergencyContactRelation: true
-      }
-    }));
+    // Use raw database service to bypass Prisma prepared statement issues
+    console.log('🔧 Using raw database service for login to avoid prepared statement conflicts');
+    const user = await rawDb.login(email, password);
 
     if (!user) {
       res.status(401).json({ error: 'Invalid credentials' });
       return;
     }
 
-    const isPasswordValid = await bcrypt.compare(password, user.password);
-
-    if (!isPasswordValid) {
-      res.status(401).json({ error: 'Invalid credentials' });
-      return;
-    }
-
     const token = generateToken(user.id);
-    const { password: _, ...userWithoutPassword } = user;
-    res.json({ user: userWithoutPassword, token });
+    res.json({ user, token });
+    console.log('✅ Login successful via raw database service');
   } catch (error) {
     console.error('Login error:', error);
     res.status(500).json({ error: 'Internal server error' });
