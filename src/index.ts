@@ -14,6 +14,26 @@ import { setIO } from './realtime';
 dotenv.config();
 
 // CRITICAL FIX: Force correct DATABASE_URL to use transaction pooler (port 6543)
+// Also optimize for Philippines -> US East 2 geographic distance
+if (process.env.DATABASE_URL) {
+  // Force transaction pooler (6543) if session pooler (5432) is detected
+  if (process.env.DATABASE_URL.includes(':5432')) {
+    process.env.DATABASE_URL = process.env.DATABASE_URL.replace(':5432', ':6543');
+    console.log('🔧 Fixed: DATABASE_URL port changed from 5432 to 6543 (transaction pooler)');
+  }
+  
+  // Add connection optimizations for Philippines -> US East 2 latency
+  if (!process.env.DATABASE_URL.includes('connection_limit')) {
+    const url = new URL(process.env.DATABASE_URL);
+    url.searchParams.set('connection_limit', '10');
+    url.searchParams.set('pool_timeout', '60');
+    url.searchParams.set('connect_timeout', '30');
+    process.env.DATABASE_URL = url.toString();
+    console.log('🌏 Optimized: DATABASE_URL configured for Philippines -> US East 2 latency');
+  }
+  
+  console.log('🔗 Final DATABASE_URL port:', process.env.DATABASE_URL.includes(':6543') ? '6543 ✅' : '5432 ❌');
+}
 // This prevents "prepared statement does not exist" errors from session pooler (port 5432)
 const CORRECT_DATABASE_URL = "postgresql://postgres.vsrvdgzvyhlpnnvktuwn:Sagipero081@aws-1-us-east-2.pooler.supabase.com:6543/postgres";
 if (!process.env.DATABASE_URL || process.env.DATABASE_URL.includes(':5432')) {
