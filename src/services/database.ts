@@ -78,7 +78,7 @@ class DatabaseService {
     return await this.ensureHealthyConnection();
   }
 
-  // Method for critical operations with retry logic
+  // Method for critical operations with retry logic and prepared statement avoidance
   public async withRetry<T>(operation: (prisma: PrismaClient) => Promise<T>): Promise<T> {
     const maxRetries = 3;
     let lastError: any;
@@ -92,24 +92,39 @@ class DatabaseService {
         const errorMessage = error instanceof Error ? error.message : String(error);
         
         if (errorMessage.includes('prepared statement') && attempt < maxRetries) {
-          console.warn(`🔄 Prepared statement error (attempt ${attempt}/${maxRetries}), creating fresh connection...`);
+          console.warn(`🔄 Prepared statement error (attempt ${attempt}/${maxRetries}), using fresh connection with UUID suffix...`);
           
-          // Create completely fresh client to avoid prepared statement conflicts
+          // DRASTIC FIX: Create completely new client with modified connection string to force new session
           try {
             await this.prisma.$disconnect();
-            this.createNewClient();
+            
+            // Add unique suffix to connection string to force new database session
+            const originalUrl = process.env.DATABASE_URL || '';
+            const uniqueSuffix = Math.random().toString(36).substring(7);
+            const modifiedUrl = originalUrl + (originalUrl.includes('?') ? '&' : '?') + `client_id=${uniqueSuffix}`;
+            
+            this.prisma = new PrismaClient({
+              datasources: {
+                db: {
+                  url: modifiedUrl
+                }
+              },
+              log: ['error'],
+              errorFormat: 'minimal'
+            });
+            
             await this.prisma.$connect();
             
-            // Reset health check timer to force immediate validation
+            // Reset health check timer
             this.lastHealthCheck = 0;
             
-            console.log(`✅ Fresh database connection created for retry ${attempt}`);
+            console.log(`✅ Fresh database session created with unique ID: ${uniqueSuffix}`);
           } catch (reconnectError) {
             console.warn('Fresh connection creation failed during retry:', reconnectError);
           }
           
           // Wait a bit before retry with exponential backoff
-          await new Promise(resolve => setTimeout(resolve, 200 * attempt));
+          await new Promise(resolve => setTimeout(resolve, 300 * attempt));
           continue;
         }
         
