@@ -487,7 +487,7 @@ class RawDatabaseService {
     const client = await this.pool.connect();
     try {
       const query = `
-        SELECT id, type, title, message, data, "isRead", "createdAt", "updatedAt"
+        SELECT id, type, title, message, data, "isRead", "createdAt"
         FROM "Notification" 
         WHERE "userId" = $1
         ORDER BY "createdAt" DESC
