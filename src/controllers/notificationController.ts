@@ -94,3 +94,68 @@ export const createNotification = async (req: AuthRequest, res: Response): Promi
     return res.status(500).json({ error: 'Failed to create notification' });
   }
 };
+
+export const sendNotification = async (req: AuthRequest, res: Response): Promise<Response | void> => {
+  try {
+    if (!req.user?.id) return res.status(401).json({ error: 'Unauthorized' });
+    const { userId, role, title, message, data, all } = req.body;
+    if (!title || !message) return res.status(400).json({ error: 'Missing title or message' });
+
+    const pushStore = require('../utils/pushStore').default || require('../utils/pushStore');
+    const push = require('../utils/push').default || require('../utils/push');
+
+    // Helper to create notification in DB
+    const createNotifFor = async (uid: string) => {
+      try {
+        await db.withRetry(async (prisma) => prisma.notification.create({ data: { userId: uid, type: 'SYSTEM', title, message, data: data || {} } }));
+      } catch (e) { console.warn('createNotifFor failed for', uid, e); }
+    };
+
+    // Send to all registered tokens
+    if (all) {
+      const list = pushStore.listTokens();
+  const uniqueUserIds: string[] = Array.from(new Set(list.map((l: any) => String(l.userId))));
+      // create DB notifications (best-effort)
+      for (const uid of uniqueUserIds) await createNotifFor(uid);
+      // send push
+      const tokens = list.map((l: any) => l.token);
+      const tickets = await push.sendPushToTokens(tokens, title, message, data || {});
+      return res.json({ status: 'sent', count: tokens.length, tickets });
+    }
+
+    // Send to role (ADMIN / RESPONDER / RESIDENT)
+    if (role) {
+      try {
+        const { rawDb } = require('../services/rawDatabase');
+      } catch (e) {}
+      // use rawDb to list users by role
+      const { rawDb } = require('../services/rawDatabase');
+      const users = await rawDb.listUsers(role);
+  const ids: string[] = users.map((u: any) => String(u.id));
+      // create records and collect tokens
+      const allTokens = pushStore.listTokens();
+      const targetTokens = allTokens.filter((t: any) => ids.includes(t.userId)).map((t: any) => t.token);
+      for (const uid of ids) await createNotifFor(uid);
+      if (targetTokens.length > 0) {
+        const tickets = await push.sendPushToTokens(targetTokens, title, message, data || {});
+        return res.json({ status: 'sent', count: targetTokens.length, tickets });
+      }
+      return res.json({ status: 'ok', count: 0 });
+    }
+
+    // Send to a specific user
+    if (userId) {
+      // create DB notification
+      const notif = await db.withRetry(async (prisma) => prisma.notification.create({ data: { userId: userId, type: 'SYSTEM', title, message, data: data || {} } }));
+      // send push if tokens exist
+      const tokens = pushStore.listTokens().filter((t: any) => t.userId === userId).map((t: any) => t.token);
+      if (tokens.length > 0) await push.sendPushToTokens(tokens, title, message, data || {});
+      return res.json({ status: 'sent', notif });
+    }
+
+    return res.status(400).json({ error: 'No target specified' });
+  } catch (err) {
+    console.error('sendNotification error:', err);
+    return res.status(500).json({ error: 'Failed to send notification' });
+  }
+};

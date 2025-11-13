@@ -703,3 +703,57 @@ export const getEmergencyHistory = async (req: AuthRequest, res: Response): Prom
     return res.status(500).json({ error: 'Failed' });
   }
 }
+
+export const listFraudEmergencies = async (req: AuthRequest, res: Response): Promise<Response | void> => {
+  try {
+    if (req.user?.role !== 'ADMIN') return res.status(403).json({ error: 'Forbidden' });
+    const rows = await rawDb.listFraudEmergencies();
+    return res.json(rows);
+  } catch (e) {
+    console.error('listFraudEmergencies error', e);
+    return res.status(500).json({ error: 'Failed' });
+  }
+}
+
+export const markFraud = async (req: AuthRequest, res: Response): Promise<Response | void> => {
+  try {
+    if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
+    if (req.user.role !== 'ADMIN') return res.status(403).json({ error: 'Forbidden' });
+    const { id } = req.params;
+    if (!id) return res.status(400).json({ error: 'Missing id' });
+
+  const updated = await rawDb.markEmergencyFraud(id, true);
+
+    // record history
+    try {
+      await db.withRetry(async (prisma) => prisma.$executeRaw`INSERT INTO public.emergency_history (emergency_id, event_type, payload) VALUES (${id}::uuid, 'MARKED_FRAUD', ${JSON.stringify({ markedBy: req.user!.id, at: new Date().toISOString() })}::jsonb)`);
+    } catch (e) { console.warn('Failed to record fraud history', e); }
+
+    // Emit to admin channel so admin UIs can update
+    try { const { getIO } = require('../realtime'); getIO().to('admin_channel').emit('emergency:fraud', { id }); } catch(e) { console.warn('emit fraud event failed', e); }
+
+    return res.json({ status: 'ok', updated });
+  } catch (err) {
+    console.error('markFraud error', err);
+    return res.status(500).json({ error: 'Failed' });
+  }
+}
+
+export const unmarkFraud = async (req: AuthRequest, res: Response): Promise<Response | void> => {
+  try {
+    if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
+    if (req.user.role !== 'ADMIN') return res.status(403).json({ error: 'Forbidden' });
+    const { id } = req.params;
+    if (!id) return res.status(400).json({ error: 'Missing id' });
+
+  const updated = await rawDb.markEmergencyFraud(id, false);
+    try {
+      await db.withRetry(async (prisma) => prisma.$executeRaw`INSERT INTO public.emergency_history (emergency_id, event_type, payload) VALUES (${id}::uuid, 'UNMARKED_FRAUD', ${JSON.stringify({ unmarkedBy: req.user!.id, at: new Date().toISOString() })}::jsonb)`);
+    } catch (e) { console.warn('Failed to record unmark fraud history', e); }
+    try { const { getIO } = require('../realtime'); getIO().to('admin_channel').emit('emergency:fraud:cleared', { id }); } catch(e) { console.warn('emit fraud cleared failed', e); }
+    return res.json({ status: 'ok', updated });
+  } catch (err) {
+    console.error('unmarkFraud error', err);
+    return res.status(500).json({ error: 'Failed' });
+  }
+}

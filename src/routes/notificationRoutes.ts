@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { listNotifications, markAsRead, markAllRead } from '../controllers/notificationController';
+import { listNotifications, markAsRead, markAllRead, sendNotification } from '../controllers/notificationController';
 import { auth } from '../middleware/auth';
 
 const router = Router();
@@ -12,6 +12,13 @@ router.put('/read-all', auth, markAllRead);
 router.post('/', auth, async (req: any, res: any) => {
 	const { createNotification } = require('../controllers/notificationController');
 	return createNotification(req, res);
+});
+
+// Admin: send notification to user, role, or all
+router.post('/send', auth, async (req: any, res: any) => {
+	try {
+		return await sendNotification(req, res);
+	} catch (e) { console.error('send route failed', e); return res.status(500).json({ error: 'failed' }); }
 });
 
 // Send a test push to the current user or all users

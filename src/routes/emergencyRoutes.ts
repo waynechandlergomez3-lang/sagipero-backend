@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { Response } from 'express';
-import { createEmergency, listEmergencies, getLatestForUser, getEmergency, assignResponder, updateResponderLocation, listPendingForResponder, requestAssignment, resolveEmergency, getEmergencyHistory, getAllEmergenciesHistory, acceptAssignment } from '../controllers/emergencyController';
+import { createEmergency, listEmergencies, getLatestForUser, getEmergency, assignResponder, updateResponderLocation, listPendingForResponder, requestAssignment, resolveEmergency, getEmergencyHistory, getAllEmergenciesHistory, acceptAssignment, listFraudEmergencies, markFraud, unmarkFraud } from '../controllers/emergencyController';
 
 import { responderArrive } from '../controllers/emergencyController';
 import { auth } from '../middleware/auth';
@@ -47,6 +47,11 @@ router.post('/accept', auth, [ body('emergencyId').notEmpty() ], acceptAssignmen
 
 // history
 router.get('/:id/history', auth, getEmergencyHistory);
+
+// fraud management (admin)
+router.get('/fraud/list', auth, listFraudEmergencies);
+router.put('/:id/mark-fraud', auth, markFraud);
+router.put('/:id/unmark-fraud', auth, unmarkFraud);
 
 // overall emergencies history (admin)
 router.get('/history/all', auth, (req: AuthRequest, res: Response) => {

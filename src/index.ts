@@ -166,6 +166,8 @@ app.use('/api/articles', articleRoutes);
 
 import configRoutes from './routes/configRoutes';
 app.use('/api/config', configRoutes);
+import reportRoutes from './routes/reportRoutes';
+app.use('/api/reports', reportRoutes);
 
 // Serve local uploads directory (development fallback)
 import path from 'path';

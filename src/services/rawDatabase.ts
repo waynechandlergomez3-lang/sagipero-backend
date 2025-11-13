@@ -197,14 +197,14 @@ class RawDatabaseService {
     try {
       const query = `
         SELECT e.id, e.type, e.description, e.location, e.address, e.priority, e.status,
-               e."createdAt", e."updatedAt", e."userId", e."responderId", e."resolvedAt",
+               e."isFraud", e."createdAt", e."updatedAt", e."userId", e."responderId", e."resolvedAt",
                e."responseNotes", e."responderLocation", e."evacuationId",
                u.name as "user_name", u.phone as "user_phone", u.role as "user_role",
                r.name as "responder_name", r.phone as "responder_phone", r.role as "responder_role"
         FROM "Emergency" e
         LEFT JOIN "User" u ON e."userId" = u.id
         LEFT JOIN "User" r ON e."responderId" = r.id
-        WHERE e.status != 'RESOLVED'
+        WHERE e.status != 'RESOLVED' AND (e."isFraud" IS NOT TRUE)
         ORDER BY e."createdAt" DESC
       `;
       
@@ -282,7 +282,7 @@ class RawDatabaseService {
     const client = await this.pool.connect();
     try {
       const query = `
-        SELECT e.id, e.type, e.description, e.location, e.address, e.priority, e.status,
+        SELECT e.id, e.type, e.description, e.location, e.address, e.priority, e.status, e."isFraud",
                e."createdAt", e."updatedAt", e."userId", e."responderId",
                u.name as "userName", u.phone as "userPhone", u.role as "userRole",
                r.name as "responderName", r.phone as "responderPhone", r.role as "responderRole"
@@ -305,14 +305,14 @@ class RawDatabaseService {
     const client = await this.pool.connect();
     try {
       const query = `
-        SELECT e.id, e.type, e.description, e.location, e.address, e.priority, e.status,
+        SELECT e.id, e.type, e.description, e.location, e.address, e.priority, e.status, e."isFraud",
                e."createdAt", e."updatedAt", e."userId", e."responderId",
                u.name as "userName", u.phone as "userPhone", u.role as "userRole",
                r.name as "responderName", r.phone as "responderPhone", r.role as "responderRole"
         FROM "Emergency" e
         LEFT JOIN "User" u ON e."userId" = u.id
         LEFT JOIN "User" r ON e."responderId" = r.id
-        WHERE e."userId" = $1 AND e.status != 'RESOLVED'
+        WHERE e."userId" = $1 AND e.status != 'RESOLVED' AND (e."isFraud" IS NOT TRUE)
         ORDER BY e."createdAt" DESC
         LIMIT 1
       `;
@@ -334,7 +334,7 @@ class RawDatabaseService {
                u.name as "userName", u.phone as "userPhone"
         FROM "Emergency" e
         LEFT JOIN "User" u ON e."userId" = u.id
-        WHERE e.status = 'PENDING'
+        WHERE e.status = 'PENDING' AND (e."isFraud" IS NOT TRUE)
         ORDER BY e."createdAt" ASC
       `;
       
@@ -416,13 +416,50 @@ class RawDatabaseService {
       const query = `
         SELECT id, type, status
         FROM "Emergency" 
-        WHERE "userId" = $1 AND status != 'RESOLVED'
+        WHERE "userId" = $1 AND status != 'RESOLVED' AND ("isFraud" IS NOT TRUE)
         LIMIT 1
       `;
       
       const result = await client.query(query, [userId]);
       return result.rows.length > 0 ? result.rows[0] : null;
       
+    } finally {
+      client.release();
+    }
+  }
+
+  // List emergencies marked as fraud (admin view)
+  public async listFraudEmergencies() {
+    const client = await this.pool.connect();
+    try {
+      const query = `
+        SELECT e.id, e.type, e.description, e.location, e.address, e.priority, e.status, e."isFraud",
+               e."createdAt", e."updatedAt", e."userId", e."responderId",
+               u.name as "userName", u.phone as "userPhone"
+        FROM "Emergency" e
+        LEFT JOIN "User" u ON e."userId" = u.id
+        WHERE e."isFraud" = TRUE
+        ORDER BY e."createdAt" DESC
+      `;
+      const result = await client.query(query);
+      return result.rows;
+    } finally {
+      client.release();
+    }
+  }
+
+  // Mark or unmark an emergency as fraud
+  public async markEmergencyFraud(id: string, isFraud: boolean) {
+    const client = await this.pool.connect();
+    try {
+      const query = `
+        UPDATE "Emergency" SET "isFraud" = $1, "updatedAt" = NOW()
+        WHERE id = $2
+        RETURNING id, type, description, location, address, priority, status, "isFraud",
+               "createdAt", "updatedAt", "userId", "responderId"
+      `;
+      const result = await client.query(query, [isFraud, id]);
+      return result.rows.length > 0 ? result.rows[0] : null;
     } finally {
       client.release();
     }
