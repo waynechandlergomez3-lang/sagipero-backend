@@ -223,8 +223,7 @@ class RawDatabaseService {
       const query = `
         SELECT id, name, address, capacity, "currentCount", facilities, location,
                "contactNumber", "isActive", "createdAt", "updatedAt"
-        FROM "EvacuationCenter" 
-        WHERE "isActive" = true
+        FROM "EvacuationCenter"
         ORDER BY name ASC
       `;
       
