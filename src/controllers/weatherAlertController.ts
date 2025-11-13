@@ -23,7 +23,7 @@ export const listWeatherAlerts = async (_req: AuthRequest, res: Response) => {
 // Create a weather alert: store in weatherAlert table and create notifications + push
 export const createWeatherAlert = async (req: AuthRequest, res: Response) => {
   try{
-  const { title, message, area: areaIn, hourlyIndexes, daily, scope, startAt, endAt, forecast } = req.body
+    const { title, message, area: areaIn, hourlyIndexes, daily, scope, startAt, endAt, forecast, severity, targetRoles, targetUserIds, broadcastAll } = req.body
   if(!title || !message) return res.status(400).json({ error: 'missing fields' })
 
   const payloadMeta = { scope: scope || null, startAt: startAt || null, endAt: endAt || null }
@@ -53,24 +53,66 @@ export const createWeatherAlert = async (req: AuthRequest, res: Response) => {
     updatedAt: new Date()
   } }))
 
-    // create notification records for all users and send push
-    console.log('createWeatherAlert: using raw database service for listing all users');
-    const users = await rawDb.listAllUsers();
-    const notifs = []
-    for(const u of users){
-      const n = await db.withRetry(async (prisma) => 
-        prisma.notification.create({ data: { userId: u.id , type: 'WEATHER', title, message, data: { weatherAlertId: wa.id, meta: payloadMeta } } })
-      )
-      notifs.push(n)
-      // emit via realtime
-      try{ const { getIO } = require('../realtime'); const io = getIO(); io.to(`user_${u.id}`).emit('notification:new', n) }catch(e){/* ignore */}
+    // create notification records for target users in a single batch to avoid repeated prepared-statement calls
+    console.log('createWeatherAlert: determining target users for notification send');
+    let users: any[] = []
+    // priority: explicit user ids -> roles -> broadcast all
+    if(Array.isArray(targetUserIds) && targetUserIds.length){
+      users = targetUserIds.map((id:string)=>({ id }))
+    }else if(Array.isArray(targetRoles) && targetRoles.length){
+      const ids = new Set<string>()
+      for(const r of targetRoles){
+        try{
+          const list = await rawDb.listUsers(r)
+          for(const u of list) ids.add(u.id)
+        }catch(e){ console.warn('failed to list users for role', r, e) }
+      }
+      users = Array.from(ids).map(id => ({ id }))
+    }else if(broadcastAll){
+      users = await rawDb.listAllUsers()
+    }else{
+      // default to all users for backward compatibility
+      users = await rawDb.listAllUsers()
+    }
+    try{
+      const notificationsData = users.map((u:any) => ({
+        userId: u.id,
+        type: 'WEATHER',
+        title,
+        message,
+        data: { weatherAlertId: wa.id, meta: payloadMeta }
+      }));
+
+      // Use a single createMany call which is far cheaper and avoids preparing many statements
+      if(notificationsData.length){
+        await db.withRetry(async (prisma) =>
+          prisma.notification.createMany({ data: notificationsData })
+        );
+      }
+
+      // Emit realtime events to connected sockets (no DB operations here)
+      try{
+        const { getIO } = require('../realtime'); const io = getIO();
+        for(const u of users){
+          try{ io.to(`user_${u.id}`).emit('notification:new', { type: 'WEATHER', title, message, weatherAlertId: wa.id }) }catch(e){/* ignore per-user */}
+        }
+      }catch(e){/* ignore realtime errors */}
+    }catch(e){
+      console.warn('createWeatherAlert: failed to create notifications in batch, falling back to best-effort emit', e);
     }
 
-    // send push to all tokens with richer payload (include forecast summary if available)
-  try{
-    const push = require('../utils/push'); const pushStore = require('../utils/pushStore'); const tokens = pushStore.listTokens().map((t:any)=>t.token);
+    // send push to tokens belonging to the targeted users with richer payload (include forecast summary if available)
+    try{
+      const push = require('../utils/push'); const pushStore = require('../utils/pushStore');
+      // map tokens to target user ids
+      const allTokens = pushStore.listTokens();
+      const targetUserIdSet = new Set(users.map(u=>u.id));
+      const tokens = allTokens.filter((t:any)=> targetUserIdSet.has(t.userId)).map((t:any)=>t.token);
     // build a short summary for the push body prioritizing forecast clues if present
-    let pushBody = message || '';
+  let pushBody = message || '';
+  // prefix urgent indicator for high severity
+  const sev = (severity || 'MEDIUM').toString().toUpperCase();
+  if(sev === 'SEVERE' || sev === 'HIGH' || sev === 'CRITICAL') pushBody = `⚠️ URGENT: ${pushBody}`;
     try{
       // area.meta may contain forecast info if admin attached it
       let meta = (wa.area && (wa.area as any).meta) ? (wa.area as any).meta : null;
@@ -96,8 +138,8 @@ export const createWeatherAlert = async (req: AuthRequest, res: Response) => {
     }catch(e){ /* ignore meta parsing errors */ }
 
     // include meta in payload for client use
-    const dataPayload = { weatherAlert: wa, meta: { ...payloadMeta, ...(wa.area && (wa.area as any).meta ? (wa.area as any).meta : {}) } };
-    const tickets = await push.sendPushToTokens(tokens, title, pushBody, dataPayload);
+      const dataPayload = { weatherAlert: wa, severity: sev, meta: { ...payloadMeta, ...(wa.area && (wa.area as any).meta ? (wa.area as any).meta : {}) } };
+      const tickets = await push.sendPushToTokens(tokens, title, pushBody, dataPayload);
     console.log('push tickets', tickets?.length || 0);
   }catch(e){ console.warn('push send failed', e) }
 
