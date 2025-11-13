@@ -69,16 +69,13 @@ export const getSummary = async (req: Request, res: Response) => {
     const summary = await generateSummary(period, date)
     const base = process.env.APP_BASE_URL || `${req.protocol}://${req.get('host')}`
 
-    // CSV
+    // CSV — stream directly to avoid relying on static file hosting
     if (format === 'csv') {
       const csv = jsonToCsv(summary)
       const fileName = `report_${period}_${(date||new Date().toISOString()).slice(0,10)}.csv`
-      const dir = path.join(process.cwd(), 'uploads', 'reports')
-      try { fs.mkdirSync(dir, { recursive: true }) } catch(e){}
-      const filePath = path.join(dir, fileName)
-      fs.writeFileSync(filePath, csv, 'utf8')
-      const urlPath = `${base}/uploads/reports/${fileName}`
-      return res.json({ url: urlPath, file: fileName })
+      res.setHeader('Content-Type', 'text/csv')
+      res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`)
+      return res.send(csv)
     }
 
     // PDF using PDFKit
@@ -154,9 +151,11 @@ export const getSummary = async (req: Request, res: Response) => {
 
         doc.end()
         const buffer = await pdfDone
-        fs.writeFileSync(filePath, buffer)
-        const urlPath = `${base}/uploads/reports/${fileName}`
-        return res.json({ url: urlPath, file: fileName })
+
+        // Send PDF directly so downloads work regardless of static-file hosting
+        res.setHeader('Content-Type', 'application/pdf')
+        res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`)
+        return res.send(buffer)
       } catch (err) {
         console.error('PDF generation (PDFKit) failed', err)
         return res.status(500).json({ error: 'Failed to generate PDF', details: String(err) })
