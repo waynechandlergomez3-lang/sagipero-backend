@@ -47,3 +47,6 @@ scripts/temp_migration.sql
 
 # local/prod secrets
 .env.production
+
+# local/prod secrets
+.env.production
