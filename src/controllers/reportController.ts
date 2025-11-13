@@ -75,7 +75,8 @@ export const getSummary = async (req: Request, res: Response) => {
       const filePath = path.join(dir, fileName)
       fs.writeFileSync(filePath, csv, 'utf8')
       // return downloadable URL
-      const urlPath = `/uploads/reports/${fileName}`
+        const base = process.env.APP_BASE_URL || `${req.protocol}://${req.get('host')}`
+        const urlPath = `${base}/uploads/reports/${fileName}`
       return res.json({ url: urlPath, file: fileName })
     }
 
@@ -152,7 +153,8 @@ export const getSummary = async (req: Request, res: Response) => {
         doc.end();
         const buffer = await pdfDone;
         fs.writeFileSync(filePath, buffer);
-        const urlPath = `/uploads/reports/${fileName}`
+          const base = process.env.APP_BASE_URL || `${req.protocol}://${req.get('host')}`
+          const urlPath = `${base}/uploads/reports/${fileName}`
         return res.json({ url: urlPath, file: fileName })
       } catch (e) {
         console.error('PDF generation (PDFKit) failed', e)
