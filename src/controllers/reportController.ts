@@ -2,9 +2,10 @@ import { Request, Response } from 'express'
 import { generateSummary } from '../services/reportService'
 import fs from 'fs'
 import path from 'path'
-// PDF generation: use html-pdf-node which wraps puppeteer for HTML->PDF
+// PDF generation: use pdfmake (no Chromium dependency) for server-side PDFs
 // dynamic require to avoid TS type issues if not present at build time
-const pdfLib: any = (() => { try { return require('html-pdf-node'); } catch (e) { return null; } })();
+const pdfMake: any = (() => { try { return require('pdfmake/build/pdfmake'); } catch (e) { return null; } })();
+const vfsFonts: any = (() => { try { return require('pdfmake/build/vfs_fonts'); } catch (e) { return null; } })();
 
 function renderReportHTML(summary: any) {
   const generatedAt = new Date().toLocaleString();
@@ -80,25 +81,87 @@ export const getSummary = async (req: Request, res: Response) => {
     }
 
     if (format === 'pdf') {
-      if (!pdfLib) {
-        console.error('PDF library not available');
+      // prefer pdfMake (no Chromium). Ensure library and VFS fonts are present.
+      if (!pdfMake || !vfsFonts) {
+        console.error('pdfmake or fonts not available');
         return res.status(500).json({ error: 'PDF generation not available on this server' });
       }
-      const html = renderReportHTML(summary)
+      // attach virtual file system fonts
+      try { pdfMake.vfs = vfsFonts.pdfMake.vfs; } catch (e) { console.warn('Failed to attach vfs fonts', e); }
+
+      // build a simple pdfmake document definition from the summary
+      const generatedAt = new Date().toLocaleString();
+      const docDefinition: any = {
+        info: { title: `Sagipero Report ${period} ${date || new Date().toISOString().slice(0,10)}` },
+        pageSize: 'A4',
+        pageMargins: [24, 36, 24, 36],
+        content: [
+          { text: 'Sagipero — Emergency Summary', style: 'header' },
+          { text: `Period: ${summary.period} (${new Date(summary.start).toLocaleDateString()} – ${new Date(summary.end).toLocaleDateString()})`, style: 'subheader' },
+          { text: `Generated: ${generatedAt}\n\n`, style: 'meta' },
+          {
+            columns: [
+              { width: '*', text: '' },
+              {
+                width: 'auto',
+                table: {
+                  body: [
+                    ['Created', String(summary.created || 0)],
+                    ['Resolved', String(summary.resolved || 0)],
+                    ['Pending', String(summary.pending || 0)],
+                    ['Fraud', String(summary.fraud || 0)]
+                  ]
+                },
+                layout: 'noBorders'
+              }
+            ]
+          },
+          { text: '\nTop Types', style: 'sectionHeader' },
+          (Array.isArray(summary.by_type) && summary.by_type.length > 0) ?
+            { table: { headerRows: 1, widths: ['*','auto'], body: [[{text:'Type', bold:true},{text:'Count', bold:true}], ...summary.by_type.map((r:any)=>[String(r.type||r[0]||''), String(r.count||r[1]||r.count||'')])] }, layout: 'lightHorizontalLines' }
+            : { text: 'No data', style: 'muted' },
+          { text: '\nTop Barangays', style: 'sectionHeader' },
+          (Array.isArray(summary.by_barangay) && summary.by_barangay.length > 0) ?
+            { table: { headerRows: 1, widths: ['*','auto'], body: [[{text:'Barangay', bold:true},{text:'Count', bold:true}], ...summary.by_barangay.map((r:any)=>[String(r.barangay||r[0]||''), String(r.count||r[1]||r.count||'')])] }, layout: 'lightHorizontalLines' }
+            : { text: 'No data', style: 'muted' },
+          { text: '\n\nSagipero — Confidential operational report', style: 'footer' }
+        ],
+        styles: {
+          header: { fontSize: 18, bold: true, margin: [0,0,0,6] },
+          subheader: { fontSize: 10, color: '#666', margin: [0,0,0,6] },
+          meta: { fontSize: 9, color: '#666' },
+          sectionHeader: { fontSize: 13, bold: true, margin: [0,8,0,6] },
+          muted: { color: '#666' },
+          footer: { fontSize: 8, color: '#999', margin: [0,12,0,0] }
+        }
+      };
+
       const fileName = `report_${period}_${(date||new Date().toISOString()).slice(0,10)}.pdf`;
       const dir = path.join(process.cwd(), 'uploads', 'reports')
       try { fs.mkdirSync(dir, { recursive: true }) } catch(e){}
       const filePath = path.join(dir, fileName)
+
       try {
-        const file = { content: html }
-        const options = { format: 'A4', margin: { top: '20mm', bottom: '20mm', left: '12mm', right: '12mm' } }
-        const pdfBuffer = await pdfLib.generatePdf(file, options)
-        fs.writeFileSync(filePath, pdfBuffer)
+        // pdfMake in Node: create PDFKit document and get buffer
+        const printer = pdfMake;
+        // createPdf returns an object with getBuffer in Node builds
+        const pdfDocGenerator: any = pdfMake.createPdf(docDefinition);
+        // getBuffer uses callback
+        await new Promise((resolve, reject) => {
+          pdfDocGenerator.getBuffer((buffer: Buffer | undefined) => {
+            if (!buffer) return reject(new Error('Empty PDF buffer'));
+            try {
+              fs.writeFileSync(filePath, buffer);
+              resolve(true);
+            } catch (err) { reject(err); }
+          });
+        });
         const urlPath = `/uploads/reports/${fileName}`
         return res.json({ url: urlPath, file: fileName })
       } catch (e) {
-        console.error('PDF generation failed', e)
-        return res.status(500).json({ error: 'Failed to generate PDF' })
+        console.error('PDF generation (pdfmake) failed', e)
+        // fallback: return JSON summary so admin UI can still present data
+        return res.status(500).json({ error: 'Failed to generate PDF', details: String(e) })
       }
     }
 

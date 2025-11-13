@@ -41,12 +41,3 @@ Thumbs.db
 # Local development files
 local-ip.txt
 scripts/temp_migration.sql
-
-# local/prod secrets
-.env.production
-
-# local/prod secrets
-.env.production
-
-# local/prod secrets
-.env.production
