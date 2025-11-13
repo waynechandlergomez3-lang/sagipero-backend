@@ -61,6 +61,8 @@ const corsOptions = {
   origin: process.env.NODE_ENV === 'production' 
     ? [
         process.env.APP_BASE_URL || '',
+        // Allow Vercel preview/deployments and hosted admin UIs
+        'https://admin-web-pearl.vercel.app',
         'https://admin-ifzcd9xpi-waynes-projects-cf252c82.vercel.app', // Current Vercel deployment
         'https://sagipero-admin.vercel.app', // Allow Vercel deployment
         'https://sagipero-admin.netlify.app', // Allow Netlify deployment
