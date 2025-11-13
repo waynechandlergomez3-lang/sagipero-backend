@@ -106,6 +106,12 @@ export const createWeatherAlert = async (req: AuthRequest, res: Response) => {
       const push = require('../utils/push'); const pushStore = require('../utils/pushStore');
       // map tokens to target user ids
       const allTokens = pushStore.listTokens();
+      // debug: log how many tokens we have (mask tokens for privacy)
+      try{
+        const sample = allTokens.slice(0,3).map((t:any)=>`${t.userId}: ${t.token.slice(0,6)}...${t.token.slice(-6)}`)
+        console.log('createWeatherAlert: push token store contains', allTokens.length, 'entries; sample:', sample)
+      }catch(e){/* ignore logging errors */}
+
       let tokens: string[] = [];
       if(broadcastAll){
         tokens = allTokens.map((t:any) => t.token);
