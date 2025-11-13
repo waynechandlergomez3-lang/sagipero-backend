@@ -16,6 +16,11 @@ export function saveToken(userId: string, token: string) {
   const raw = fs.readFileSync(FILE, 'utf8');
   const list: TokenEntry[] = JSON.parse(raw || '[]');
   const now = new Date().toISOString();
+  try{
+    // Log masked token for debugging (avoid printing full tokens in logs)
+    const tSample = typeof token === 'string' && token.length > 12 ? `${token.slice(0,6)}...${token.slice(-6)}` : token;
+    console.log('pushStore.saveToken: saving token for user', userId, '; token:', tSample);
+  }catch(e){/* ignore logging errors */}
   const existing = list.find((l) => l.userId === userId || l.token === token);
   if (existing) {
     existing.userId = userId;
