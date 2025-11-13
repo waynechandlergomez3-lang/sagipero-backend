@@ -2,6 +2,48 @@ import { Request, Response } from 'express'
 import { generateSummary } from '../services/reportService'
 import fs from 'fs'
 import path from 'path'
+// PDF generation: use html-pdf-node which wraps puppeteer for HTML->PDF
+// dynamic require to avoid TS type issues if not present at build time
+const pdfLib: any = (() => { try { return require('html-pdf-node'); } catch (e) { return null; } })();
+
+function renderReportHTML(summary: any) {
+  const generatedAt = new Date().toLocaleString();
+  const header = `<div style="display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid #eee;margin-bottom:12px"><div><h1 style=\"margin:0;font-size:20px\">Sagipero — Emergency Summary</h1><div style=\"color:#666;font-size:12px\">Period: ${summary.period} (${new Date(summary.start).toLocaleDateString()} – ${new Date(summary.end).toLocaleDateString()})</div></div><div style=\"text-align:right;color:#666;font-size:12px\">Generated: ${generatedAt}</div></div>`;
+
+  const stats = `
+  <div style="display:flex;gap:12px;flex-wrap:wrap;margin:12px 0">
+    <div style="flex:1;min-width:140px;padding:12px;background:#f7fbff;border-radius:8px;border:1px solid #e6f0fb">
+      <div style="font-size:12px;color:#666">Created</div>
+      <div style="font-size:20px;font-weight:700">${summary.created}</div>
+    </div>
+    <div style="flex:1;min-width:140px;padding:12px;background:#fff7f7;border-radius:8px;border:1px solid #fdecea">
+      <div style="font-size:12px;color:#666">Resolved</div>
+      <div style="font-size:20px;font-weight:700">${summary.resolved}</div>
+    </div>
+    <div style="flex:1;min-width:140px;padding:12px;background:#fffaf0;border-radius:8px;border:1px solid #fff4d6">
+      <div style="font-size:12px;color:#666">Pending</div>
+      <div style="font-size:20px;font-weight:700">${summary.pending}</div>
+    </div>
+    <div style="flex:1;min-width:140px;padding:12px;background:#f8fff7;border-radius:8px;border:1px solid #e8f6ea">
+      <div style="font-size:12px;color:#666">Fraud</div>
+      <div style="font-size:20px;font-weight:700">${summary.fraud}</div>
+    </div>
+  </div>`;
+
+  function tableFromArray(arr: any[], col1: string, col2: string) {
+    if (!Array.isArray(arr) || arr.length === 0) return `<div style="color:#666;font-size:13px">No data</div>`;
+    const rows = arr.map((r: any) => `<tr><td style="padding:6px 8px;border-bottom:1px solid #eee">${r[col1] || r[0] || ''}</td><td style="padding:6px 8px;border-bottom:1px solid #eee;text-align:right">${r[col2] ?? r.count ?? ''}</td></tr>`).join('');
+    return `<table style=\"width:100%;border-collapse:collapse;margin-top:8px;font-size:13px\"><thead><tr><th style=\"text-align:left;padding:6px 8px;border-bottom:2px solid #ddd\">${col1}</th><th style=\"text-align:right;padding:6px 8px;border-bottom:2px solid #ddd\">${col2}</th></tr></thead><tbody>${rows}</tbody></table>`;
+  }
+
+  const byType = `<div style=\"margin-top:16px\"><h3 style=\"margin:6px 0\">Top Types</h3>${tableFromArray(summary.by_type || [], 'type', 'count')}</div>`;
+  const byBarangay = `<div style=\"margin-top:16px\"><h3 style=\"margin:6px 0\">Top Barangays</h3>${tableFromArray(summary.by_barangay || [], 'barangay', 'count')}</div>`;
+
+  const footer = `<div style=\"margin-top:24px;padding-top:12px;border-top:1px solid #eee;color:#999;font-size:12px\">Sagipero — Confidential operational report</div>`;
+
+  const html = `<!doctype html><html><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"></head><body style=\"font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial; color:#222; padding:18px;\">${header}${stats}${byType}${byBarangay}${footer}</body></html>`;
+  return html;
+}
 
 function jsonToCsv(obj: any) {
   // Simple CSV: flatten top-level fields and arrays as JSON strings
@@ -35,6 +77,29 @@ export const getSummary = async (req: Request, res: Response) => {
       // return downloadable URL
       const urlPath = `/uploads/reports/${fileName}`
       return res.json({ url: urlPath, file: fileName })
+    }
+
+    if (format === 'pdf') {
+      if (!pdfLib) {
+        console.error('PDF library not available');
+        return res.status(500).json({ error: 'PDF generation not available on this server' });
+      }
+      const html = renderReportHTML(summary)
+      const fileName = `report_${period}_${(date||new Date().toISOString()).slice(0,10)}.pdf`;
+      const dir = path.join(process.cwd(), 'uploads', 'reports')
+      try { fs.mkdirSync(dir, { recursive: true }) } catch(e){}
+      const filePath = path.join(dir, fileName)
+      try {
+        const file = { content: html }
+        const options = { format: 'A4', margin: { top: '20mm', bottom: '20mm', left: '12mm', right: '12mm' } }
+        const pdfBuffer = await pdfLib.generatePdf(file, options)
+        fs.writeFileSync(filePath, pdfBuffer)
+        const urlPath = `/uploads/reports/${fileName}`
+        return res.json({ url: urlPath, file: fileName })
+      } catch (e) {
+        console.error('PDF generation failed', e)
+        return res.status(500).json({ error: 'Failed to generate PDF' })
+      }
     }
 
     return res.json(summary)

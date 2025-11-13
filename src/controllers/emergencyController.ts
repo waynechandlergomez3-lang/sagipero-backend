@@ -718,11 +718,27 @@ export const listFraudEmergencies = async (req: AuthRequest, res: Response): Pro
 export const markFraud = async (req: AuthRequest, res: Response): Promise<Response | void> => {
   try {
     if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
-    if (req.user.role !== 'ADMIN') return res.status(403).json({ error: 'Forbidden' });
     const { id } = req.params;
     if (!id) return res.status(400).json({ error: 'Missing id' });
 
-  const updated = await rawDb.markEmergencyFraud(id, true);
+    // allow ADMINS always; allow RESPONDER only if they are the assigned responder for the emergency
+    if (req.user.role !== 'ADMIN') {
+      if (req.user.role === 'RESPONDER') {
+        // verify assignment
+        try {
+          const emergency = await db.withRetry(async (prisma) => prisma.emergency.findUnique({ where: { id }, select: { responderId: true, status: true } }));
+          if (!emergency) return res.status(404).json({ error: 'Emergency not found' });
+          if (emergency.status === 'RESOLVED') return res.status(400).json({ error: 'Cannot mark a resolved emergency as fraud' });
+          if (emergency.responderId !== req.user.id) return res.status(403).json({ error: 'Forbidden' });
+        } catch (e) {
+          console.warn('markFraud: failed to verify responder assignment', e);
+          return res.status(500).json({ error: 'Failed to verify permission' });
+        }
+      } else {
+        return res.status(403).json({ error: 'Forbidden' });
+      }
+    }
+    const updated = await rawDb.markEmergencyFraud(id, true);
 
     // record history
     try {
