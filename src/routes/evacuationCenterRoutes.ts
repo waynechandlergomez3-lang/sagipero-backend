@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { createEvacuationCenter, getEvacuationCenters } from '../controllers/evacuationCenterController';
+import { updateEvacuationCenter } from '../controllers/evacuationCenterUpdateController';
 import { auth } from '../middleware/auth';
 import { body } from 'express-validator';
 
@@ -15,5 +16,7 @@ router.post('/', auth, [
 ], createEvacuationCenter);
 
 router.get('/', auth, getEvacuationCenters);
+
+router.patch('/:id', auth, updateEvacuationCenter);
 
 export default router;
