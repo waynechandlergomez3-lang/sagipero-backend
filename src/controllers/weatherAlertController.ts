@@ -106,8 +106,17 @@ export const createWeatherAlert = async (req: AuthRequest, res: Response) => {
       const push = require('../utils/push'); const pushStore = require('../utils/pushStore');
       // map tokens to target user ids
       const allTokens = pushStore.listTokens();
-      const targetUserIdSet = new Set(users.map(u=>u.id));
-      const tokens = allTokens.filter((t:any)=> targetUserIdSet.has(t.userId)).map((t:any)=>t.token);
+      let tokens: string[] = [];
+      if(broadcastAll){
+        tokens = allTokens.map((t:any) => t.token);
+      }else{
+        const targetUserIdSet = new Set(users.map(u=>u.id));
+        tokens = allTokens.filter((t:any)=> targetUserIdSet.has(t.userId)).map((t:any)=>t.token);
+        if(!tokens.length){
+          console.warn('createWeatherAlert: no push tokens matched target users, falling back to all tokens');
+          tokens = allTokens.map((t:any) => t.token);
+        }
+      }
     // build a short summary for the push body prioritizing forecast clues if present
   let pushBody = message || '';
   // prefix urgent indicator for high severity
@@ -138,9 +147,13 @@ export const createWeatherAlert = async (req: AuthRequest, res: Response) => {
     }catch(e){ /* ignore meta parsing errors */ }
 
     // include meta in payload for client use
-      const dataPayload = { weatherAlert: wa, severity: sev, meta: { ...payloadMeta, ...(wa.area && (wa.area as any).meta ? (wa.area as any).meta : {}) } };
-      const tickets = await push.sendPushToTokens(tokens, title, pushBody, dataPayload);
-    console.log('push tickets', tickets?.length || 0);
+      const dataPayload = { weatherAlert: wa, severity: sev, meta: { ...payloadMeta, ...(wa.area && (wa.area as any).meta ? (wa.area as any).meta : {}) }, urgent: (sev === 'SEVERE' || sev === 'CRITICAL') };
+      if(tokens.length === 0){
+        console.warn('createWeatherAlert: no push tokens available to send');
+      }else{
+        const tickets = await push.sendPushToTokens(tokens, title, pushBody, dataPayload);
+        console.log('push tickets', tickets?.length || 0, 'for tokens', tokens.length);
+      }
   }catch(e){ console.warn('push send failed', e) }
 
     return res.json(wa)
