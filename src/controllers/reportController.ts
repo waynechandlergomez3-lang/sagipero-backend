@@ -2,10 +2,9 @@ import { Request, Response } from 'express'
 import { generateSummary } from '../services/reportService'
 import fs from 'fs'
 import path from 'path'
-// PDF generation: use pdfmake (no Chromium dependency) for server-side PDFs
+// PDF generation: use PDFKit (no Chromium dependency and no external fonts required)
 // dynamic require to avoid TS type issues if not present at build time
-const pdfMake: any = (() => { try { return require('pdfmake/build/pdfmake'); } catch (e) { return null; } })();
-const vfsFonts: any = (() => { try { return require('pdfmake/build/vfs_fonts'); } catch (e) { return null; } })();
+const PDFDocument: any = (() => { try { return require('pdfkit'); } catch (e) { return null; } })();
 
 function renderReportHTML(summary: any) {
   const generatedAt = new Date().toLocaleString();
@@ -81,60 +80,10 @@ export const getSummary = async (req: Request, res: Response) => {
     }
 
     if (format === 'pdf') {
-      // prefer pdfMake (no Chromium). Ensure library and VFS fonts are present.
-      if (!pdfMake || !vfsFonts) {
-        console.error('pdfmake or fonts not available');
+      if (!PDFDocument) {
+        console.error('PDFKit not available');
         return res.status(500).json({ error: 'PDF generation not available on this server' });
       }
-      // attach virtual file system fonts
-      try { pdfMake.vfs = vfsFonts.pdfMake.vfs; } catch (e) { console.warn('Failed to attach vfs fonts', e); }
-
-      // build a simple pdfmake document definition from the summary
-      const generatedAt = new Date().toLocaleString();
-      const docDefinition: any = {
-        info: { title: `Sagipero Report ${period} ${date || new Date().toISOString().slice(0,10)}` },
-        pageSize: 'A4',
-        pageMargins: [24, 36, 24, 36],
-        content: [
-          { text: 'Sagipero — Emergency Summary', style: 'header' },
-          { text: `Period: ${summary.period} (${new Date(summary.start).toLocaleDateString()} – ${new Date(summary.end).toLocaleDateString()})`, style: 'subheader' },
-          { text: `Generated: ${generatedAt}\n\n`, style: 'meta' },
-          {
-            columns: [
-              { width: '*', text: '' },
-              {
-                width: 'auto',
-                table: {
-                  body: [
-                    ['Created', String(summary.created || 0)],
-                    ['Resolved', String(summary.resolved || 0)],
-                    ['Pending', String(summary.pending || 0)],
-                    ['Fraud', String(summary.fraud || 0)]
-                  ]
-                },
-                layout: 'noBorders'
-              }
-            ]
-          },
-          { text: '\nTop Types', style: 'sectionHeader' },
-          (Array.isArray(summary.by_type) && summary.by_type.length > 0) ?
-            { table: { headerRows: 1, widths: ['*','auto'], body: [[{text:'Type', bold:true},{text:'Count', bold:true}], ...summary.by_type.map((r:any)=>[String(r.type||r[0]||''), String(r.count||r[1]||r.count||'')])] }, layout: 'lightHorizontalLines' }
-            : { text: 'No data', style: 'muted' },
-          { text: '\nTop Barangays', style: 'sectionHeader' },
-          (Array.isArray(summary.by_barangay) && summary.by_barangay.length > 0) ?
-            { table: { headerRows: 1, widths: ['*','auto'], body: [[{text:'Barangay', bold:true},{text:'Count', bold:true}], ...summary.by_barangay.map((r:any)=>[String(r.barangay||r[0]||''), String(r.count||r[1]||r.count||'')])] }, layout: 'lightHorizontalLines' }
-            : { text: 'No data', style: 'muted' },
-          { text: '\n\nSagipero — Confidential operational report', style: 'footer' }
-        ],
-        styles: {
-          header: { fontSize: 18, bold: true, margin: [0,0,0,6] },
-          subheader: { fontSize: 10, color: '#666', margin: [0,0,0,6] },
-          meta: { fontSize: 9, color: '#666' },
-          sectionHeader: { fontSize: 13, bold: true, margin: [0,8,0,6] },
-          muted: { color: '#666' },
-          footer: { fontSize: 8, color: '#999', margin: [0,12,0,0] }
-        }
-      };
 
       const fileName = `report_${period}_${(date||new Date().toISOString()).slice(0,10)}.pdf`;
       const dir = path.join(process.cwd(), 'uploads', 'reports')
@@ -142,25 +91,71 @@ export const getSummary = async (req: Request, res: Response) => {
       const filePath = path.join(dir, fileName)
 
       try {
-        // pdfMake in Node: create PDFKit document and get buffer
-        const printer = pdfMake;
-        // createPdf returns an object with getBuffer in Node builds
-        const pdfDocGenerator: any = pdfMake.createPdf(docDefinition);
-        // getBuffer uses callback
-        await new Promise((resolve, reject) => {
-          pdfDocGenerator.getBuffer((buffer: Buffer | undefined) => {
-            if (!buffer) return reject(new Error('Empty PDF buffer'));
-            try {
-              fs.writeFileSync(filePath, buffer);
-              resolve(true);
-            } catch (err) { reject(err); }
-          });
+        const doc = new PDFDocument({ size: 'A4', margin: 24 });
+        const chunks: Buffer[] = [];
+        doc.on('data', (chunk: Buffer) => chunks.push(chunk));
+        const pdfDone = new Promise<Buffer>((resolve, reject) => {
+          doc.on('end', () => resolve(Buffer.concat(chunks)));
+          doc.on('error', (err: Error) => reject(err));
         });
+
+        // Header
+        doc.fontSize(18).text('Sagipero — Emergency Summary', { align: 'left' });
+        doc.moveDown(0.2);
+        doc.fontSize(10).fillColor('#666').text(`Period: ${summary.period} (${new Date(summary.start).toLocaleDateString()} – ${new Date(summary.end).toLocaleDateString()})`);
+        doc.fontSize(9).fillColor('#666').text(`Generated: ${new Date().toLocaleString()}`);
+        doc.moveDown(0.8);
+
+        // Stats table-like
+        doc.fillColor('#000').fontSize(12);
+        const stats = [
+          ['Created', String(summary.created || 0)],
+          ['Resolved', String(summary.resolved || 0)],
+          ['Pending', String(summary.pending || 0)],
+          ['Fraud', String(summary.fraud || 0)]
+        ];
+        const col1Width = 200;
+        stats.forEach(row => {
+          doc.fontSize(11).text(row[0], { continued: true, width: col1Width });
+          doc.text(row[1], { align: 'right' });
+        });
+        doc.moveDown(0.8);
+
+        // Top Types
+        doc.fontSize(13).text('Top Types', { underline: true });
+        if (Array.isArray(summary.by_type) && summary.by_type.length > 0) {
+          summary.by_type.forEach((r: any) => {
+            doc.fontSize(11).text(`${r.type || r[0] || ''}`, { continued: true, width: col1Width });
+            doc.text(String(r.count || r[1] || r.count || ''), { align: 'right' });
+          });
+        } else {
+          doc.fontSize(10).fillColor('#666').text('No data');
+          doc.fillColor('#000');
+        }
+        doc.moveDown(0.6);
+
+        // Top Barangays
+        doc.fontSize(13).text('Top Barangays', { underline: true });
+        if (Array.isArray(summary.by_barangay) && summary.by_barangay.length > 0) {
+          summary.by_barangay.forEach((r: any) => {
+            doc.fontSize(11).text(`${r.barangay || r[0] || ''}`, { continued: true, width: col1Width });
+            doc.text(String(r.count || r[1] || r.count || ''), { align: 'right' });
+          });
+        } else {
+          doc.fontSize(10).fillColor('#666').text('No data');
+          doc.fillColor('#000');
+        }
+
+        doc.moveDown(1);
+        doc.fontSize(9).fillColor('#999').text('Sagipero — Confidential operational report');
+
+        doc.end();
+        const buffer = await pdfDone;
+        fs.writeFileSync(filePath, buffer);
         const urlPath = `/uploads/reports/${fileName}`
         return res.json({ url: urlPath, file: fileName })
       } catch (e) {
-        console.error('PDF generation (pdfmake) failed', e)
-        // fallback: return JSON summary so admin UI can still present data
+        console.error('PDF generation (PDFKit) failed', e)
         return res.status(500).json({ error: 'Failed to generate PDF', details: String(e) })
       }
     }
