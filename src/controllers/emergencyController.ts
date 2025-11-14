@@ -35,13 +35,14 @@ export const createEmergency = async (req: AuthRequest, res: Response): Promise<
   const reportingUser = await rawDb.getUserForEmergency(userId);
 
   // Determine priority based on user's circumstances
-  // - specialCircumstances (other than NONE) -> priority 3
+  // New mapping:
+  // - specialCircumstances (other than NONE) -> priority 1 (MOST SEVERE)
   // - medicalConditions present -> priority 2
-  // - otherwise -> priority 1
+  // - otherwise -> priority 3 (LEAST SEVERE / normal)
   const hasSpecial = Array.isArray(reportingUser?.specialCircumstances) && reportingUser!.specialCircumstances.some((s: any) => s && s !== 'NONE');
   const hasMedical = Array.isArray(reportingUser?.medicalConditions) && reportingUser!.medicalConditions.length > 0;
-  let priority = 1;
-  if (hasSpecial) priority = 3;
+  let priority = 3;
+  if (hasSpecial) priority = 1;
   else if (hasMedical) priority = 2;
     
   // enforce one active emergency per user
