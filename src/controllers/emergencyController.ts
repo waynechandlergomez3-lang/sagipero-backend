@@ -39,8 +39,28 @@ export const createEmergency = async (req: AuthRequest, res: Response): Promise<
   // - specialCircumstances (other than NONE) -> priority 1 (MOST SEVERE)
   // - medicalConditions present -> priority 2
   // - otherwise -> priority 3 (LEAST SEVERE / normal)
-  const hasSpecial = Array.isArray(reportingUser?.specialCircumstances) && reportingUser!.specialCircumstances.some((s: any) => s && s !== 'NONE');
-  const hasMedical = Array.isArray(reportingUser?.medicalConditions) && reportingUser!.medicalConditions.length > 0;
+  // Normalize fields from raw DB (they may come back as JSON strings)
+  let specialArr: any[] = [];
+  let medicalArr: any[] = [];
+  try {
+    const rawSpecial = reportingUser?.specialCircumstances;
+    if (Array.isArray(rawSpecial)) specialArr = rawSpecial;
+    else if (typeof rawSpecial === 'string' && rawSpecial.length) {
+      try { specialArr = JSON.parse(rawSpecial); } catch(e) { specialArr = [rawSpecial]; }
+    }
+  } catch (e) { specialArr = []; }
+  try {
+    const rawMedical = reportingUser?.medicalConditions;
+    if (Array.isArray(rawMedical)) medicalArr = rawMedical;
+    else if (typeof rawMedical === 'string' && rawMedical.length) {
+      try { medicalArr = JSON.parse(rawMedical); } catch(e) { medicalArr = [rawMedical]; }
+    }
+  } catch (e) { medicalArr = []; }
+
+  const hasSpecial = specialArr.some((s: any) => s && s !== 'NONE');
+  const hasMedical = medicalArr.length > 0;
+
+  // New mapping: 1 = MOST SEVERE (special), 2 = MEDIUM (medical), 3 = LEAST (normal)
   let priority = 3;
   if (hasSpecial) priority = 1;
   else if (hasMedical) priority = 2;
