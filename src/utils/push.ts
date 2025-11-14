@@ -29,6 +29,41 @@ export async function sendPushToTokens(tokens: string[], title: string, message:
       console.error('Error sending push notifications chunk:', error);
     }
   }
+  try{
+    // After sending, attempt to fetch receipts for ticket ids to detect invalid tokens
+    const ticketIds = tickets.filter(t => t && t.id).map(t => t.id);
+    if(ticketIds.length){
+      const receiptChunks = expo.chunkPushNotificationReceiptIds(ticketIds);
+      for(const rc of receiptChunks){
+        try{
+          const receipts = await expo.getPushNotificationReceiptsAsync(rc);
+          // receipts is an object keyed by ticket id
+          for(const [ticketId, receipt] of Object.entries(receipts)){
+            try{
+              if((receipt as any).status === 'error'){
+                console.error('Push receipt error for ticket', ticketId, (receipt as any).message || (receipt as any).details || receipt);
+                // If device not registered, attempt to remove the corresponding token from store
+                const details = (receipt as any).details || {};
+                if(details.error === 'DeviceNotRegistered'){
+                  // tickets array contains items with id so find index by id
+                  const idx = tickets.findIndex(t => t && t.id === ticketId);
+                  if(idx !== -1){
+                    // map messages/tokens: messages and tokens arrays are in same order
+                    const badToken = messages[idx]?.to || null;
+                    if(badToken){
+                      try{ pushStore.removeToken(badToken); console.log('Removed unregistered push token from store', badToken); }catch(e){console.warn('Failed to remove token', e)}
+                    }
+                  }
+                }
+              }
+            }catch(e){ console.warn('Error processing receipt', e); }
+          }
+        }catch(e){ console.warn('Failed to fetch receipts chunk', e); }
+      }
+    }
+  }catch(e){ console.warn('Post-send receipt handling failed', e); }
+  // Log tickets for debugging
+  try{ console.log('push.sendPushToTokens: tickets:', JSON.stringify(tickets)); }catch(e){/* ignore */}
   return tickets;
 }
 
