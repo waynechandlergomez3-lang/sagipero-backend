@@ -34,16 +34,15 @@ export const createEmergency = async (req: AuthRequest, res: Response): Promise<
   console.log('createEmergency: using raw database service for fetching user details');
   const reportingUser = await rawDb.getUserForEmergency(userId);
 
-  // For SOS or urgent typed requests, set base priority
-  const urgentTypes = ['SOS','MEDICAL','FIRE','FLOOD','EARTHQUAKE'];
-  let priority = urgentTypes.includes(type) ? 3 : 2;
-
-  // If the reporting user has medical conditions or special circumstances (other than NONE), bump to high priority
+  // Determine priority based on user's circumstances
+  // - specialCircumstances (other than NONE) -> priority 3
+  // - medicalConditions present -> priority 2
+  // - otherwise -> priority 1
   const hasSpecial = Array.isArray(reportingUser?.specialCircumstances) && reportingUser!.specialCircumstances.some((s: any) => s && s !== 'NONE');
   const hasMedical = Array.isArray(reportingUser?.medicalConditions) && reportingUser!.medicalConditions.length > 0;
-  if (hasSpecial || hasMedical) {
-    priority = 3;
-  }
+  let priority = 1;
+  if (hasSpecial) priority = 3;
+  else if (hasMedical) priority = 2;
     
   // enforce one active emergency per user
   console.log('createEmergency: using raw database service for checking existing emergency');
