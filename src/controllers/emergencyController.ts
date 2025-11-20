@@ -6,7 +6,7 @@ import pushStore from '../utils/pushStore';
 import push from '../utils/push';
 import { randomUUID } from 'crypto';
 import { rawDb } from '../services/rawDatabase';
-
+//force commit
 export const createEmergency = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     if (process.env.NODE_ENV !== 'production') {
