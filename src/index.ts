@@ -171,6 +171,9 @@ app.use('/api/config', configRoutes);
 import reportRoutes from './routes/reportRoutes';
 app.use('/api/reports', reportRoutes);
 
+import vehicleRoutes from './routes/vehicleRoutes';
+app.use('/api/vehicles', vehicleRoutes);
+
 // Serve local uploads directory (development fallback)
 import path from 'path';
 app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));

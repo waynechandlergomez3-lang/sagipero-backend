@@ -151,6 +151,21 @@ model User {
   UserDocument                          UserDocument[]
 }
 
+model Vehicle {
+  id          String   @id @default(dbgenerated("gen_random_uuid()"))
+  responderId String
+  plateNumber String?
+  model       String?
+  color       String?
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime
+
+  User        User     @relation(fields: [responderId], references: [id], onDelete: Cascade)
+
+  @@index([responderId])
+}
+
 model UserDocument {
   id        String   @id
   userId    String
