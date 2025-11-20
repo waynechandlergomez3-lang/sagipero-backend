@@ -38,9 +38,29 @@ function renderReportHTML(summary: any) {
     return `<table style=\"width:100%;border-collapse:collapse;margin-top:8px;font-size:13px\"><thead><tr><th style=\"text-align:left;padding:6px 8px;border-bottom:2px solid #ddd\">${col1}</th><th style=\"text-align:right;padding:6px 8px;border-bottom:2px solid #ddd\">${col2}</th></tr></thead><tbody>${rows}</tbody></table>`
   }
 
+  function respondersTable(arr: any[]) {
+    if (!Array.isArray(arr) || arr.length === 0) return `<div style=\"color:#666;font-size:13px\">No data</div>`
+    const fmt = (s: any) => {
+      if (s == null) return '-'
+      const n = Number(s)
+      if (!isFinite(n)) return '-'
+      return new Date(Math.round(n) * 1000).toISOString().substr(11,8)
+    }
+    const rows = arr.map((r: any) => {
+      const name = r.name || r.responder_id || '(Unknown)'
+      const avgResp = fmt(r.avg_response_seconds)
+      const avgResolve = fmt(r.avg_time_to_resolve_seconds)
+      const resolved = r.resolved_count ?? 0
+      const acted = r.acted_count ?? 0
+      const fraud = r.fraud_count ?? 0
+      return `<tr>\n        <td style=\"padding:6px 8px;border-bottom:1px solid #eee\">${name}</td>\n        <td style=\"padding:6px 8px;border-bottom:1px solid #eee;text-align:right\">${avgResp}</td>\n        <td style=\"padding:6px 8px;border-bottom:1px solid #eee;text-align:right\">${avgResolve}</td>\n        <td style=\"padding:6px 8px;border-bottom:1px solid #eee;text-align:right\">${resolved}</td>\n        <td style=\"padding:6px 8px;border-bottom:1px solid #eee;text-align:right\">${acted}</td>\n        <td style=\"padding:6px 8px;border-bottom:1px solid #eee;text-align:right\">${fraud}</td>\n      </tr>`
+    }).join('')
+    return `<table style=\"width:100%;border-collapse:collapse;margin-top:8px;font-size:13px\"><thead><tr>\n      <th style=\"text-align:left;padding:6px 8px;border-bottom:2px solid #ddd\">Responder</th>\n      <th style=\"text-align:right;padding:6px 8px;border-bottom:2px solid #ddd\">Avg Response</th>\n      <th style=\"text-align:right;padding:6px 8px;border-bottom:2px solid #ddd\">Avg to Resolve</th>\n      <th style=\"text-align:right;padding:6px 8px;border-bottom:2px solid #ddd\">Resolved</th>\n      <th style=\"text-align:right;padding:6px 8px;border-bottom:2px solid #ddd\">Acted</th>\n      <th style=\"text-align:right;padding:6px 8px;border-bottom:2px solid #ddd\">Fraud</th>\n    </tr></thead><tbody>${rows}</tbody></table>`
+  }
+
   const byType = `<div style=\"margin-top:16px\"><h3 style=\"margin:6px 0\">Top Types</h3>${tableFromArray(summary.by_type || [], 'type', 'count')}</div>`
   const byBarangay = `<div style=\"margin-top:16px\"><h3 style=\"margin:6px 0\">Top Barangays</h3>${tableFromArray(summary.by_barangay || [], 'barangay', 'count')}</div>`
-  const byResponders = `<div style=\"margin-top:16px\"><h3 style=\"margin:6px 0\">Top Responders</h3>${tableFromArray(summary.responders || [], 'name', 'acted_count')}</div>`
+  const byResponders = `<div style=\"margin-top:16px\"><h3 style=\"margin:6px 0\">Top Responders</h3>${respondersTable(summary.responders || [])}</div>`
 
   const footer = `<div style=\"margin-top:24px;padding-top:12px;border-top:1px solid #eee;color:#999;font-size:12px\">Sagipero — Confidential operational report</div>`
 
@@ -110,9 +130,10 @@ export const getSummary = async (req: Request, res: Response) => {
 
           // Table header
           doc.fontSize(11).fillColor('#000')
-          const col1 = 160
+          const col1 = 140
           doc.font('Helvetica-Bold').text('Responder', { continued: true, width: col1 })
           doc.text('Avg Response', { continued: true, align: 'left' })
+          doc.text('Avg to Resolve', { continued: true, align: 'left' })
           doc.text('Resolved', { continued: true, align: 'right' })
           doc.text('Acted', { continued: true, align: 'right' })
           doc.text('Fraud', { align: 'right' })
@@ -123,10 +144,13 @@ export const getSummary = async (req: Request, res: Response) => {
           for (const r of rows) {
             const avgSecs = r.avg_response_seconds ? Math.round(Number(r.avg_response_seconds)) : null
             const avgStr = avgSecs != null ? new Date(avgSecs * 1000).toISOString().substr(11, 8) : '-'
+            const avgResolveSecs = r.avg_time_to_resolve_seconds ? Math.round(Number(r.avg_time_to_resolve_seconds)) : null
+            const avgResolveStr = avgResolveSecs != null ? new Date(avgResolveSecs * 1000).toISOString().substr(11, 8) : '-'
             const name = r.name || r.responder_id || '(Unknown)'
 
             doc.fontSize(10).text(String(name), { continued: true, width: col1 })
             doc.text(avgStr, { continued: true })
+            doc.text(avgResolveStr, { continued: true })
             doc.text(String(r.resolved_count || 0), { continued: true, align: 'right' })
             doc.text(String(r.acted_count || 0), { continued: true, align: 'right' })
             doc.text(String(r.fraud_count || 0), { align: 'right' })
@@ -228,8 +252,11 @@ export const getSummary = async (req: Request, res: Response) => {
           respondersRows.forEach((r: any) => {
             const avgSecs = r.avg_response_seconds ? Math.round(Number(r.avg_response_seconds)) : null
             const avgStr = avgSecs != null ? new Date(avgSecs * 1000).toISOString().substr(11, 8) : '-'
+            const avgResolveSecs = r.avg_time_to_resolve_seconds ? Math.round(Number(r.avg_time_to_resolve_seconds)) : null
+            const avgResolveStr = avgResolveSecs != null ? new Date(avgResolveSecs * 1000).toISOString().substr(11, 8) : '-'
             doc.fontSize(11).text(`${r.name || r.responder_id || ''}`, { continued: true, width: col1Width })
             doc.text(avgStr, { continued: true })
+            doc.text(avgResolveStr, { continued: true })
             doc.text(String(r.resolved_count || 0), { continued: true, align: 'right' })
             doc.text(String(r.acted_count || 0), { continued: true, align: 'right' })
             doc.text(String(r.fraud_count || 0), { align: 'right' })
