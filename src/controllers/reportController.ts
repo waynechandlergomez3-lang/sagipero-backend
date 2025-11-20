@@ -1,5 +1,6 @@
 import { Request, Response } from 'express'
 import { generateSummary } from '../services/reportService'
+import { generateResponderSummary } from '../services/reportService'
 import fs from 'fs'
 import path from 'path'
 
@@ -39,10 +40,11 @@ function renderReportHTML(summary: any) {
 
   const byType = `<div style=\"margin-top:16px\"><h3 style=\"margin:6px 0\">Top Types</h3>${tableFromArray(summary.by_type || [], 'type', 'count')}</div>`
   const byBarangay = `<div style=\"margin-top:16px\"><h3 style=\"margin:6px 0\">Top Barangays</h3>${tableFromArray(summary.by_barangay || [], 'barangay', 'count')}</div>`
+  const byResponders = `<div style=\"margin-top:16px\"><h3 style=\"margin:6px 0\">Top Responders</h3>${tableFromArray(summary.responders || [], 'name', 'acted_count')}</div>`
 
   const footer = `<div style=\"margin-top:24px;padding-top:12px;border-top:1px solid #eee;color:#999;font-size:12px\">Sagipero — Confidential operational report</div>`
 
-  const html = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial; color:#222; padding:18px;">${header}${stats}${byType}${byBarangay}${footer}</body></html>`
+  const html = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial; color:#222; padding:18px;">${header}${stats}${byType}${byBarangay}${byResponders}${footer}</body></html>`
   return html
 }
 
@@ -80,6 +82,69 @@ export const getSummary = async (req: Request, res: Response) => {
 
     // PDF using PDFKit
     if (format === 'pdf') {
+      // If group=responders, generate responder-centric PDF
+      if (String(req.query.group || '').toLowerCase() === 'responders') {
+        try {
+          if (!PDFDocument) {
+            console.error('PDFKit not available')
+            return res.status(500).json({ error: 'PDF generation not available on this server' })
+          }
+
+          const rsummary = await generateResponderSummary(period, date)
+          const fileName = `report_responders_${period}_${(date||new Date().toISOString()).slice(0,10)}.pdf`
+
+          const doc = new PDFDocument({ size: 'A4', margin: 24 })
+          const chunks: Buffer[] = []
+          doc.on('data', (chunk: Buffer) => chunks.push(chunk))
+          const pdfDone = new Promise<Buffer>((resolve, reject) => {
+            doc.on('end', () => resolve(Buffer.concat(chunks)))
+            doc.on('error', (err: Error) => reject(err))
+          })
+
+          // Header
+          doc.fontSize(16).text('Sagipero — Responder Report', { align: 'left' })
+          doc.moveDown(0.2)
+          doc.fontSize(10).fillColor('#666').text(`Period: ${rsummary.period} (${new Date(rsummary.start).toLocaleDateString()} – ${new Date(rsummary.end).toLocaleDateString()})`)
+          doc.fontSize(9).fillColor('#666').text(`Generated: ${new Date().toLocaleString()}`)
+          doc.moveDown(0.6)
+
+          // Table header
+          doc.fontSize(11).fillColor('#000')
+          const col1 = 160
+          doc.font('Helvetica-Bold').text('Responder', { continued: true, width: col1 })
+          doc.text('Avg Response', { continued: true, align: 'left' })
+          doc.text('Resolved', { continued: true, align: 'right' })
+          doc.text('Acted', { continued: true, align: 'right' })
+          doc.text('Fraud', { align: 'right' })
+          doc.moveDown(0.2)
+          doc.font('Helvetica')
+
+          const rows = rsummary.responders || []
+          for (const r of rows) {
+            const avgSecs = r.avg_response_seconds ? Math.round(Number(r.avg_response_seconds)) : null
+            const avgStr = avgSecs != null ? new Date(avgSecs * 1000).toISOString().substr(11, 8) : '-'
+            const name = r.name || r.responder_id || '(Unknown)'
+
+            doc.fontSize(10).text(String(name), { continued: true, width: col1 })
+            doc.text(avgStr, { continued: true })
+            doc.text(String(r.resolved_count || 0), { continued: true, align: 'right' })
+            doc.text(String(r.acted_count || 0), { continued: true, align: 'right' })
+            doc.text(String(r.fraud_count || 0), { align: 'right' })
+          }
+
+          doc.moveDown(0.8)
+          doc.fontSize(9).fillColor('#999').text('Sagipero — Confidential operational report')
+          doc.end()
+
+          const buffer = await pdfDone
+          res.setHeader('Content-Type', 'application/pdf')
+          res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`)
+          return res.send(buffer)
+        } catch (err) {
+          console.error('Responder PDF generation failed', err)
+          return res.status(500).json({ error: 'Failed to generate responder PDF', details: String(err) })
+        }
+      }
       if (!PDFDocument) {
         console.error('PDFKit not available')
         return res.status(500).json({ error: 'PDF generation not available on this server' })
@@ -91,6 +156,15 @@ export const getSummary = async (req: Request, res: Response) => {
       const filePath = path.join(dir, fileName)
 
       try {
+        // include responder metrics in the standard report PDF as well
+        let rsummary: any = null
+        try {
+          rsummary = await generateResponderSummary(period, date)
+          // attach to main summary for HTML/JSON consumers
+          ;(summary as any).responders = rsummary.responders || []
+        } catch (e) {
+          console.error('Failed to load responder summary for combined report', e)
+        }
         const doc = new PDFDocument({ size: 'A4', margin: 24 })
         const chunks: Buffer[] = []
         doc.on('data', (chunk: Buffer) => chunks.push(chunk))
@@ -146,6 +220,25 @@ export const getSummary = async (req: Request, res: Response) => {
           doc.fillColor('#000')
         }
 
+        // Top Responders (included in main report)
+        doc.moveDown(0.6)
+        doc.fontSize(13).text('Top Responders', { underline: true })
+        const respondersRows = (summary as any).responders || (rsummary && rsummary.responders) || []
+        if (Array.isArray(respondersRows) && respondersRows.length > 0) {
+          respondersRows.forEach((r: any) => {
+            const avgSecs = r.avg_response_seconds ? Math.round(Number(r.avg_response_seconds)) : null
+            const avgStr = avgSecs != null ? new Date(avgSecs * 1000).toISOString().substr(11, 8) : '-'
+            doc.fontSize(11).text(`${r.name || r.responder_id || ''}`, { continued: true, width: col1Width })
+            doc.text(avgStr, { continued: true })
+            doc.text(String(r.resolved_count || 0), { continued: true, align: 'right' })
+            doc.text(String(r.acted_count || 0), { continued: true, align: 'right' })
+            doc.text(String(r.fraud_count || 0), { align: 'right' })
+          })
+        } else {
+          doc.fontSize(10).fillColor('#666').text('No data')
+          doc.fillColor('#000')
+        }
+
         doc.moveDown(1)
         doc.fontSize(9).fillColor('#999').text('Sagipero — Confidential operational report')
 
@@ -160,6 +253,16 @@ export const getSummary = async (req: Request, res: Response) => {
         console.error('PDF generation (PDFKit) failed', err)
         return res.status(500).json({ error: 'Failed to generate PDF', details: String(err) })
       }
+    }
+
+    // ensure JSON responses also include responder metrics
+    try {
+      if (!(summary as any).responders) {
+        const rsummary = await generateResponderSummary(period, date)
+        ;(summary as any).responders = rsummary.responders || []
+      }
+    } catch (e) {
+      console.error('Failed to attach responder summary to JSON report', e)
     }
 
     return res.json(summary)
