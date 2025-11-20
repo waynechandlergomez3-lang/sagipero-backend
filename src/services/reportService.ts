@@ -126,11 +126,31 @@ export async function generateResponderSummary(period: string, refDate?: string)
       WITH actions AS (
         SELECT
           h.emergency_id::text as emergency_id,
-          (h.payload->>'responderId') as responder_id,
+          -- try several common JSON paths for responder id to be tolerant of payload shape
+          COALESCE(
+            NULLIF(trim(BOTH '"' FROM (h.payload->>'responderId')),''),
+            NULLIF(trim(BOTH '"' FROM (h.payload->'responder'->>'id')),''),
+            NULLIF(trim(BOTH '"' FROM (h.payload->>'responder_id')),''),
+            NULLIF(trim(BOTH '"' FROM (h.payload->'assignee'->>'id')),''),
+            NULLIF(trim(BOTH '"' FROM (h.payload->>'assigneeId')),''),
+            NULLIF(trim(BOTH '"' FROM (h.payload->>'userId')),''),
+            NULLIF(trim(BOTH '"' FROM (h.payload->'user'->>'id')),''),
+            NULL
+          ) as responder_id,
           MIN(h.created_at) as action_at
         FROM public.emergency_history h
-        WHERE h.event_type IN ('ACCEPTED','ARRIVED','ASSIGNED')
-        GROUP BY h.emergency_id, (h.payload->>'responderId')
+        -- be forgiving about event type names (match common substrings, case-insensitive)
+        WHERE (h.event_type ILIKE '%ACCEPT%' OR h.event_type ILIKE '%ARRIV%' OR h.event_type ILIKE '%ASSIGN%')
+        GROUP BY h.emergency_id, COALESCE(
+          NULLIF(trim(BOTH '"' FROM (h.payload->>'responderId')),''),
+          NULLIF(trim(BOTH '"' FROM (h.payload->'responder'->>'id')),''),
+          NULLIF(trim(BOTH '"' FROM (h.payload->>'responder_id')),''),
+          NULLIF(trim(BOTH '"' FROM (h.payload->'assignee'->>'id')),''),
+          NULLIF(trim(BOTH '"' FROM (h.payload->>'assigneeId')),''),
+          NULLIF(trim(BOTH '"' FROM (h.payload->>'userId')),''),
+          NULLIF(trim(BOTH '"' FROM (h.payload->'user'->>'id')),''),
+          NULL
+        )
       ),
       relevant AS (
         SELECT em.id::text as emergency_id, em."createdAt", em."responderId", em."isFraud", em."resolvedAt"
