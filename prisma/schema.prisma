@@ -148,6 +148,7 @@ model User {
   Emergency_Emergency_userIdToUser      Emergency[]           @relation("Emergency_userIdToUser")
   Location                              Location?
   Notification                          Notification[]
+  Vehicles                              Vehicle[]
   UserDocument                          UserDocument[]
 }
 
