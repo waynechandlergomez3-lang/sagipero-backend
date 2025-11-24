@@ -29,7 +29,6 @@ router.get('/', auth, async (req: AuthRequest, res: Response) => {
 
 router.get('/profile', auth, getProfile);
 
-router.patch('/profile', auth, [
   body('name').optional().notEmpty(),
   body('phone').optional(),
   body('address').optional(),
@@ -39,7 +38,9 @@ router.patch('/profile', auth, [
   body('emergencyContactRelation').optional(),
   body('medicalConditions').optional().isArray(),
   body('allergies').optional().isArray(),
+  body('responderTypes').optional().isArray(),
   body('specialCircumstances').optional().isArray()
+], updateProfile);
 ], updateProfile);
 
 router.put('/situation-status', auth, [

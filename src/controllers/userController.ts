@@ -96,7 +96,8 @@ export const createUserByAdmin = async (req: AuthRequest, res: Response): Promis
       medicalConditions,
       allergies,
       specialCircumstances
-    } = req.body;
+    , responderTypes
+    } = req.body as any;
 
     const { responderTypes } = req.body as any;
 
@@ -231,7 +232,8 @@ export const updateProfile = async (req: AuthRequest, res: Response): Promise<vo
           ...(emergencyContactRelation && { emergencyContactRelation }),
           ...(medicalConditions && { medicalConditions }),
           ...(allergies && { allergies }),
-          ...(specialCircumstances && { specialCircumstances })
+          ...(specialCircumstances && { specialCircumstances }),
+          ...(responderTypes !== undefined && { responderTypes: Array.isArray(responderTypes) ? responderTypes.map((t: any) => String(t).toUpperCase()) : [] })
         },
         select: {
           id: true,
