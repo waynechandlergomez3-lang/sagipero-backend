@@ -109,3 +109,4 @@ Visit `/health` endpoint to verify deployment:
 MIT License - see LICENSE file for details.
 
 <!-- force-push-trigger: minor edit to trigger push -->
+<!-- backend: note added 2025-11-24 to trigger deployment push -->
