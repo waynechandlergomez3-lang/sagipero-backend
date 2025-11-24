@@ -28,7 +28,11 @@ router.get('/', auth, async (req: AuthRequest, res: Response) => {
 });
 
 router.get('/profile', auth, getProfile);
+// Get profile (current user)
+router.get('/profile', auth, getProfile);
 
+// Update profile (current user)
+router.patch('/profile', auth, [
   body('name').optional().notEmpty(),
   body('phone').optional(),
   body('address').optional(),
@@ -40,7 +44,6 @@ router.get('/profile', auth, getProfile);
   body('allergies').optional().isArray(),
   body('responderTypes').optional().isArray(),
   body('specialCircumstances').optional().isArray()
-], updateProfile);
 ], updateProfile);
 
 router.put('/situation-status', auth, [
