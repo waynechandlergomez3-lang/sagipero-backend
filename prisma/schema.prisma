@@ -167,6 +167,23 @@ model Vehicle {
   @@index([responderId])
 }
 
+model InventoryItem {
+  id          String   @id @default(dbgenerated("gen_random_uuid()"))
+  responderId String?
+  name        String
+  sku         String?
+  quantity    Int      @default(0)
+  unit        String?
+  notes       String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime
+
+  User        User?    @relation(fields: [responderId], references: [id], onDelete: Cascade)
+
+  @@index([responderId])
+}
+
 model UserDocument {
   id        String   @id
   userId    String

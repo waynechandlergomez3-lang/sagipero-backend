@@ -5,9 +5,9 @@ import { randomUUID } from 'crypto'
 
 export const listInventory = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const vehicleId = typeof req.query.vehicleId === 'string' ? req.query.vehicleId : undefined
+    const responderId = typeof req.query.responderId === 'string' ? req.query.responderId : undefined
     const items = await db.withRetry(async (client) => {
-      if (vehicleId) return await client.inventoryItem.findMany({ where: { vehicleId }, orderBy: { createdAt: 'desc' } })
+      if (responderId) return await client.inventoryItem.findMany({ where: { responderId }, orderBy: { createdAt: 'desc' } })
       return await client.inventoryItem.findMany({ orderBy: { createdAt: 'desc' } })
     })
     res.json(items)
@@ -21,10 +21,10 @@ export const createInventoryItem = async (req: AuthRequest, res: Response): Prom
   try {
     // require admin to create items via admin UI
     if (!req.user || req.user.role !== 'ADMIN') { res.status(403).json({ error: 'Forbidden' }); return }
-    const { vehicleId, name, sku, quantity, unit, notes, isActive } = req.body as any
+    const { responderId, name, sku, quantity, unit, notes, isActive } = req.body as any
     if (!name) { res.status(400).json({ error: 'Missing name' }); return }
     const item = await db.withRetry(async (client) => client.inventoryItem.create({ data: {
-      id: randomUUID(), vehicleId: vehicleId || null, name, sku: sku || null, quantity: quantity == null ? 0 : Number(quantity), unit: unit || null, notes: notes || null, isActive: isActive === undefined ? true : !!isActive, updatedAt: new Date()
+      id: randomUUID(), responderId: responderId || null, name, sku: sku || null, quantity: quantity == null ? 0 : Number(quantity), unit: unit || null, notes: notes || null, isActive: isActive === undefined ? true : !!isActive, updatedAt: new Date()
     }}))
     res.status(201).json(item)
   } catch (err) {
@@ -37,9 +37,9 @@ export const updateInventoryItem = async (req: AuthRequest, res: Response): Prom
   try {
     if (!req.user || req.user.role !== 'ADMIN') { res.status(403).json({ error: 'Forbidden' }); return }
     const { id } = req.params as any
-    const { vehicleId, name, sku, quantity, unit, notes, isActive } = req.body as any
+    const { responderId, name, sku, quantity, unit, notes, isActive } = req.body as any
     const data: any = {}
-    if (vehicleId !== undefined) data.vehicleId = vehicleId
+    if (responderId !== undefined) data.responderId = responderId
     if (name !== undefined) data.name = name
     if (sku !== undefined) data.sku = sku
     if (quantity !== undefined) data.quantity = Number(quantity)
