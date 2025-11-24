@@ -150,6 +150,7 @@ model User {
   Notification                          Notification[]
   Vehicles                              Vehicle[]
   UserDocument                          UserDocument[]
+  inventoryItems                         InventoryItem[]
 }
 
 model Vehicle {
