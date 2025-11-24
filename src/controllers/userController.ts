@@ -99,8 +99,6 @@ export const createUserByAdmin = async (req: AuthRequest, res: Response): Promis
     , responderTypes
     } = req.body as any;
 
-    const { responderTypes } = req.body as any;
-
     if (!email || !name) {
       res.status(400).json({ error: 'email and name are required' });
       return;
@@ -215,7 +213,8 @@ export const updateProfile = async (req: AuthRequest, res: Response): Promise<vo
       emergencyContactRelation,
       medicalConditions,
       allergies,
-      specialCircumstances 
+      specialCircumstances,
+      responderTypes
     } = req.body;
 
     const user = await db.withRetry(async (client) => {
