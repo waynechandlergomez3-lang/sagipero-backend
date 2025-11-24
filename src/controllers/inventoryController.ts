@@ -23,12 +23,21 @@ export const listInventory = async (req: AuthRequest, res: Response): Promise<vo
 
 export const createInventoryItem = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    // require admin to create items via admin UI
-    if (!req.user || req.user.role !== 'ADMIN') { res.status(403).json({ error: 'Forbidden' }); return }
     const { responderId, name, sku, quantity, unit, notes, isActive, available } = req.body as any
     if (!name) { res.status(400).json({ error: 'Missing name' }); return }
+
+    // Admins may create items for any responder; responders may only create items for themselves
+    let targetResponderId: string | null = null
+    if (req.user && req.user.role === 'ADMIN') {
+      targetResponderId = responderId || null
+    } else if (req.user && req.user.role === 'RESPONDER') {
+      targetResponderId = req.user.id
+    } else {
+      res.status(403).json({ error: 'Forbidden' }); return
+    }
+
     const item = await db.withRetry(async (client) => client.inventoryItem.create({ data: {
-      id: randomUUID(), responderId: responderId || null, name, sku: sku || null, quantity: quantity == null ? 0 : Number(quantity), unit: unit || null, notes: notes || null, isActive: isActive === undefined ? true : !!isActive, available: available === undefined ? true : !!available, updatedAt: new Date()
+      id: randomUUID(), responderId: targetResponderId, name, sku: sku || null, quantity: quantity == null ? 0 : Number(quantity), unit: unit || null, notes: notes || null, isActive: isActive === undefined ? true : !!isActive, available: available === undefined ? true : !!available, updatedAt: new Date()
     }}))
     res.status(201).json(item)
   } catch (err) {
@@ -39,17 +48,27 @@ export const createInventoryItem = async (req: AuthRequest, res: Response): Prom
 
 export const updateInventoryItem = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    if (!req.user || req.user.role !== 'ADMIN') { res.status(403).json({ error: 'Forbidden' }); return }
     const { id } = req.params as any
     const { responderId, name, sku, quantity, unit, notes, isActive, available } = req.body as any
+
+    // Fetch existing item to check ownership
+    const existing = await db.withRetry(async (client) => client.inventoryItem.findUnique({ where: { id } }))
+    if (!existing) { res.status(404).json({ error: 'Not found' }); return }
+
+    // Admins may update any item; responders may update only their own items
+    if (!req.user) { res.status(403).json({ error: 'Forbidden' }); return }
+    if (req.user.role === 'RESPONDER' && existing.responderId !== req.user.id) { res.status(403).json({ error: 'Forbidden' }); return }
+    if (req.user.role !== 'ADMIN' && req.user.role !== 'RESPONDER') { res.status(403).json({ error: 'Forbidden' }); return }
+
     const data: any = {}
-    if (responderId !== undefined) data.responderId = responderId
+    // responders are not allowed to change responderId
+    if (req.user.role === 'ADMIN' && responderId !== undefined) data.responderId = responderId
     if (name !== undefined) data.name = name
     if (sku !== undefined) data.sku = sku
     if (quantity !== undefined) data.quantity = Number(quantity)
     if (unit !== undefined) data.unit = unit
     if (notes !== undefined) data.notes = notes
-    if (isActive !== undefined) data.isActive = isActive
+    if (isActive !== undefined && req.user.role === 'ADMIN') data.isActive = isActive
     if (available !== undefined) data.available = !!available
     if (Object.keys(data).length === 0) { res.status(400).json({ error: 'No fields to update' }); return }
     data.updatedAt = new Date()
@@ -63,8 +82,12 @@ export const updateInventoryItem = async (req: AuthRequest, res: Response): Prom
 
 export const deleteInventoryItem = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    if (!req.user || req.user.role !== 'ADMIN') { res.status(403).json({ error: 'Forbidden' }); return }
     const { id } = req.params as any
+    const existing = await db.withRetry(async (client) => client.inventoryItem.findUnique({ where: { id } }))
+    if (!existing) { res.status(404).json({ error: 'Not found' }); return }
+    if (!req.user) { res.status(403).json({ error: 'Forbidden' }); return }
+    if (req.user.role === 'RESPONDER' && existing.responderId !== req.user.id) { res.status(403).json({ error: 'Forbidden' }); return }
+    if (req.user.role !== 'ADMIN' && req.user.role !== 'RESPONDER') { res.status(403).json({ error: 'Forbidden' }); return }
     await db.withRetry(async (client) => client.inventoryItem.delete({ where: { id } }))
     res.json({ status: 'deleted' })
   } catch (err) {
