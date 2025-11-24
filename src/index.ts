@@ -173,6 +173,8 @@ app.use('/api/reports', reportRoutes);
 
 import vehicleRoutes from './routes/vehicleRoutes';
 app.use('/api/vehicles', vehicleRoutes);
+import inventoryRoutes from './routes/inventoryRoutes';
+app.use('/api/inventory', inventoryRoutes);
 
 // Serve local uploads directory (development fallback)
 import path from 'path';
