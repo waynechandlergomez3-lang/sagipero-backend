@@ -1,6 +1,6 @@
 import { Router } from 'express'
 import { listInventory, createInventoryItem, updateInventoryItem, deleteInventoryItem, inventorySummary } from '../controllers/inventoryController'
-import auth from '../middleware/auth'
+import { auth } from '../middleware/auth'
 
 const router = Router()
 
