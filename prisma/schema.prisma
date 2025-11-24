@@ -176,6 +176,7 @@ model InventoryItem {
   unit        String?
   notes       String?
   isActive    Boolean  @default(true)
+  available   Boolean  @default(true)
   createdAt   DateTime @default(now())
   updatedAt   DateTime
 

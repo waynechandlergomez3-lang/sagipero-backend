@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS public."InventoryItem" (
   "quantity" integer DEFAULT 0,
   "unit" text,
   "notes" text,
+  "available" boolean DEFAULT true,
   "isActive" boolean DEFAULT true,
   "createdAt" timestamptz DEFAULT now(),
   "updatedAt" timestamptz DEFAULT now(),
