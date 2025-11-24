@@ -139,6 +139,7 @@ model User {
   specialCircumstances                  SpecialCircumstance[] @default([NONE])
   medicalConditions                     String[]              @default([])
   allergies                             String[]              @default([])
+  responderTypes                        String[]              @default([])
   emergencyContactName                  String?
   emergencyContactPhone                 String?
   emergencyContactRelation              String?

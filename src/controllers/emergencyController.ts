@@ -474,25 +474,38 @@ export const assignResponder = async (req: AuthRequest, res: Response): Promise<
     if (!existing) return res.status(404).json({ error: 'Emergency not found' });
     if (existing.status === EmergencyStatus.RESOLVED) return res.status(400).json({ error: 'Cannot assign responder to a resolved emergency' });
 
-    // ensure responder is available (use raw SQL to read authoritative DB value)
+    // ensure responder is available and qualified for this emergency type
     try {
       const rows: any = await db.withRetry(async (prisma) => 
-        prisma.$queryRaw`SELECT "responderStatus" FROM "User" WHERE id = ${responderId} LIMIT 1`
+        prisma.$queryRaw`SELECT "responderStatus", "responderTypes" FROM "User" WHERE id = ${responderId} LIMIT 1`
       );
-      const dbStatus = rows && rows[0] ? (rows[0].responderStatus || rows[0].responderstatus) : null;
+      const userRow = rows && rows[0] ? rows[0] : null;
+      const dbStatus = userRow ? (userRow.responderStatus || userRow.responderstatus) : null;
+      const dbTypes = userRow ? (userRow.responderTypes || userRow.respondertypes || []) : [];
       if (!dbStatus) return res.status(404).json({ error: 'Responder not found' });
+      // normalize types to uppercase strings
+      const normalizedTypes = Array.isArray(dbTypes) ? dbTypes.map((t: any) => String(t).toUpperCase()) : [];
+      const emergencyType = (existing.type || '').toString().toUpperCase();
+      if (emergencyType && normalizedTypes.length > 0 && !normalizedTypes.includes(emergencyType)) {
+        return res.status(400).json({ error: 'Responder not qualified for this emergency type' });
+      }
       if (dbStatus !== 'AVAILABLE') {
         if (dbStatus === 'VEHICLE_UNAVAILABLE') return res.status(400).json({ error: 'Responder vehicle unavailable' });
         return res.status(400).json({ error: 'Responder not available' });
       }
     } catch (e) {
-      console.warn('Failed to verify responder status with raw query, falling back to ORM', e);
+      console.warn('Failed to verify responder status/types with raw query, falling back to ORM', e);
       const responder = await db.withRetry(async (prisma) => 
-        prisma.user.findUnique({ where: { id: responderId }, select: { responderStatus: true } })
+        prisma.user.findUnique({ where: { id: responderId }, select: { responderStatus: true, responderTypes: true } })
       );
       if (!responder) return res.status(404).json({ error: 'Responder not found' });
-      if (responder.responderStatus !== 'AVAILABLE') {
-        const rs: any = responder.responderStatus;
+      const rs: any = responder.responderStatus;
+      const normalizedTypes = Array.isArray(responder.responderTypes) ? responder.responderTypes.map((t: any) => String(t).toUpperCase()) : [];
+      const emergencyType = (existing.type || '').toString().toUpperCase();
+      if (emergencyType && normalizedTypes.length > 0 && !normalizedTypes.includes(emergencyType)) {
+        return res.status(400).json({ error: 'Responder not qualified for this emergency type' });
+      }
+      if (rs !== 'AVAILABLE') {
         if (rs === 'VEHICLE_UNAVAILABLE') return res.status(400).json({ error: 'Responder vehicle unavailable' });
         return res.status(400).json({ error: 'Responder not available' });
       }

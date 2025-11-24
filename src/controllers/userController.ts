@@ -98,6 +98,8 @@ export const createUserByAdmin = async (req: AuthRequest, res: Response): Promis
       specialCircumstances
     } = req.body;
 
+    const { responderTypes } = req.body as any;
+
     if (!email || !name) {
       res.status(400).json({ error: 'email and name are required' });
       return;
@@ -131,6 +133,7 @@ export const createUserByAdmin = async (req: AuthRequest, res: Response): Promis
             medicalConditions: medicalConditions || [],
             allergies: allergies || [],
             specialCircumstances: (specialCircumstances && specialCircumstances.length>0) ? specialCircumstances : ['NONE'],
+            responderTypes: responderTypes || [],
             updatedAt: new Date()
           }
         });
@@ -325,9 +328,10 @@ export const listUsers = async (req: AuthRequest, res: Response): Promise<Respon
 
     // Optional role filter (e.g. ?role=RESPONDER) to only return responders
     const roleFilter = typeof req.query.role === 'string' ? req.query.role : undefined
+    const typeFilter = typeof req.query.type === 'string' ? req.query.type.toUpperCase() : undefined
 
     console.log('listUsers: using raw database service for listing users');
-    const users = await rawDb.listUsers(roleFilter);
+    const users = await rawDb.listUsers(roleFilter, typeFilter);
 
   console.log('listUsers: found', (users || []).length, 'users');
   res.json(users);
@@ -371,6 +375,7 @@ export const updateUserById = async (req: AuthRequest, res: Response): Promise<v
     if (medicalConditions !== undefined) data.medicalConditions = medicalConditions;
     if (allergies !== undefined) data.allergies = allergies;
     if (specialCircumstances !== undefined) data.specialCircumstances = specialCircumstances;
+    if ((req.body as any).responderTypes !== undefined) data.responderTypes = (req.body as any).responderTypes;
 
     console.log('updateUserById: updating user', id, 'with data:', data);
 

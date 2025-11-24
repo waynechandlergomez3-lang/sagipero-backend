@@ -164,21 +164,29 @@ class RawDatabaseService {
   }
 
   // List all users - raw SQL
-  public async listUsers(roleFilter?: string) {
+  public async listUsers(roleFilter?: string, typeFilter?: string) {
     const client = await this.pool.connect();
     try {
       let query = `
         SELECT id, email, name, role, phone, address, barangay,
                "specialCircumstances", "medicalConditions", allergies, "bloodType",
                "emergencyContactName", "emergencyContactPhone", "emergencyContactRelation",
-               "responderStatus", "situationStatus", "createdAt", "updatedAt"
+               "responderStatus", "situationStatus", "responderTypes", "createdAt", "updatedAt"
         FROM "User" 
       `;
       
       const params: any[] = [];
-      if (roleFilter) {
+      if (roleFilter && typeFilter) {
+        // both filters: role must match and the responderTypes array must include the requested type
+        query += ` WHERE role = $1 AND ($2 = ANY("responderTypes"))`;
+        params.push(roleFilter, typeFilter);
+      } else if (roleFilter) {
         query += ` WHERE role = $1`;
         params.push(roleFilter);
+      } else if (typeFilter) {
+        // if only typeFilter is provided, return users (responders) that have the type
+        query += ` WHERE ($1 = ANY("responderTypes"))`;
+        params.push(typeFilter);
       }
       
       query += ` ORDER BY "createdAt" DESC`;
@@ -351,8 +359,8 @@ class RawDatabaseService {
     try {
       const query = `
         SELECT id, email, name, role, phone, address, barangay,
-               "responderStatus", "situationStatus", "specialCircumstances", 
-               "medicalConditions", allergies, "bloodType",
+               "responderStatus", "situationStatus", "specialCircumstances",
+               "responderTypes", "medicalConditions", allergies, "bloodType",
                "emergencyContactName", "emergencyContactPhone", "emergencyContactRelation",
                "createdAt", "updatedAt"
         FROM "User" 
