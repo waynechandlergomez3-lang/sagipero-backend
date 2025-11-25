@@ -4,8 +4,9 @@ import { auth } from '../middleware/auth'
 
 const router = Router()
 
-router.get('/', auth, listInventory)
+// Summary must come before /:id to avoid route matching conflicts
 router.get('/summary', auth, inventorySummary)
+router.get('/', auth, listInventory)
 router.post('/', auth, createInventoryItem)
 router.put('/:id', auth, updateInventoryItem)
 router.delete('/:id', auth, deleteInventoryItem)

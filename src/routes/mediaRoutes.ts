@@ -1,13 +1,20 @@
 import { Router } from 'express'
 import multer from 'multer'
 import path from 'path'
+import fs from 'fs'
 import { createMediaSubmission, listMyMedia, listAllMedia, updateMediaStatus, deleteMediaSubmission, getMediaStats, uploadMedia } from '../controllers/mediaController'
 import { auth } from '../middleware/auth'
+
+// Ensure uploads directory exists
+const uploadsDir = 'uploads'
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true })
+}
 
 // Configure multer for file uploads
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    cb(null, 'uploads/')
+    cb(null, uploadsDir)
   },
   filename: (req, file, cb) => {
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9)
