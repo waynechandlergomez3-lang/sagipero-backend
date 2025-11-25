@@ -42,23 +42,49 @@ export const createEmergency = async (req: AuthRequest, res: Response): Promise<
   // Normalize fields from raw DB (they may come back as JSON strings)
   let specialArr: any[] = [];
   let medicalArr: any[] = [];
+  
   try {
     const rawSpecial = reportingUser?.specialCircumstances;
-    if (Array.isArray(rawSpecial)) specialArr = rawSpecial;
-    else if (typeof rawSpecial === 'string' && rawSpecial.length) {
-      try { specialArr = JSON.parse(rawSpecial); } catch(e) { specialArr = [rawSpecial]; }
+    if (Array.isArray(rawSpecial)) {
+      specialArr = rawSpecial;
+    } else if (typeof rawSpecial === 'string' && rawSpecial.length) {
+      try { 
+        specialArr = JSON.parse(rawSpecial); 
+      } catch(e) { 
+        specialArr = [rawSpecial]; 
+      }
+    } else if (rawSpecial) {
+      specialArr = [rawSpecial];
     }
-  } catch (e) { specialArr = []; }
+  } catch (e) { 
+    console.warn('Error normalizing specialCircumstances:', e);
+    specialArr = []; 
+  }
+  
   try {
     const rawMedical = reportingUser?.medicalConditions;
-    if (Array.isArray(rawMedical)) medicalArr = rawMedical;
-    else if (typeof rawMedical === 'string' && rawMedical.length) {
-      try { medicalArr = JSON.parse(rawMedical); } catch(e) { medicalArr = [rawMedical]; }
+    if (Array.isArray(rawMedical)) {
+      medicalArr = rawMedical;
+    } else if (typeof rawMedical === 'string' && rawMedical.length) {
+      try { 
+        medicalArr = JSON.parse(rawMedical); 
+      } catch(e) { 
+        medicalArr = [rawMedical]; 
+      }
+    } else if (rawMedical) {
+      medicalArr = [rawMedical];
     }
-  } catch (e) { medicalArr = []; }
+  } catch (e) { 
+    console.warn('Error normalizing medicalConditions:', e);
+    medicalArr = []; 
+  }
 
-  const hasSpecial = specialArr.some((s: any) => s && s !== 'NONE');
-  const hasMedical = medicalArr.length > 0;
+  // Ensure arrays are actually arrays before calling methods
+  if (!Array.isArray(specialArr)) specialArr = [];
+  if (!Array.isArray(medicalArr)) medicalArr = [];
+
+  const hasSpecial = specialArr && Array.isArray(specialArr) && specialArr.some((s: any) => s && s !== 'NONE');
+  const hasMedical = medicalArr && Array.isArray(medicalArr) && medicalArr.length > 0;
 
   // New mapping: 1 = MOST SEVERE (special), 2 = MEDIUM (medical), 3 = LEAST (normal)
   let priority = 3;
