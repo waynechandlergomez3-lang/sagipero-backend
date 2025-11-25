@@ -5,8 +5,8 @@ import fs from 'fs'
 import { createMediaSubmission, listMyMedia, listAllMedia, updateMediaStatus, deleteMediaSubmission, getMediaStats, uploadMedia } from '../controllers/mediaController'
 import { auth } from '../middleware/auth'
 
-// Ensure uploads directory exists
-const uploadsDir = 'uploads'
+// Ensure uploads directory exists (use absolute path to avoid issues with working directory)
+const uploadsDir = path.join(process.cwd(), 'uploads')
 if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true })
 }
