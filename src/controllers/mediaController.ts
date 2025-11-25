@@ -136,7 +136,7 @@ export const listAllMedia = async (req: AuthRequest, res: Response): Promise<voi
 
     const media = await db.withRetry(async (client) => {
       return await client.citizenMedia.findMany({
-        where: Object.keys(where).length > 0 ? where : undefined,
+        where: Object.keys(where).length > 0 ? where : {},
         orderBy: { createdAt: 'desc' },
         include: {
           User: {
