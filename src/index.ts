@@ -176,6 +176,9 @@ app.use('/api/vehicles', vehicleRoutes);
 import inventoryRoutes from './routes/inventoryRoutes';
 app.use('/api/inventory', inventoryRoutes);
 
+import mediaRoutes from './routes/mediaRoutes';
+app.use('/api/media', mediaRoutes);
+
 // Serve local uploads directory (development fallback)
 import path from 'path';
 app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
