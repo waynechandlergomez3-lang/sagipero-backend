@@ -3,6 +3,56 @@ import { db } from '../services/database'
 import { AuthRequest } from '../types/custom'
 import { randomUUID } from 'crypto'
 
+export const uploadMedia = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const userId = req.user?.id
+    const { description } = req.body as any
+
+    if (!userId) {
+      res.status(401).json({ error: 'Unauthorized' })
+      return
+    }
+
+    if (!req.file) {
+      res.status(400).json({ error: 'No file provided' })
+      return
+    }
+
+    // Determine media type from file mimetype
+    let mediaType = 'photo'
+    if (req.file.mimetype.startsWith('video')) {
+      mediaType = 'video'
+    }
+
+    // Create media URL from the uploaded file path
+    const mediaUrl = `/uploads/${req.file.filename}`
+
+    const submission = await db.withRetry(async (client) => {
+      return await client.citizenMedia.create({
+        data: {
+          id: randomUUID(),
+          userId,
+          mediaUrl,
+          mediaType,
+          caption: description || null,
+          status: 'PENDING',
+          createdAt: new Date(),
+          updatedAt: new Date()
+        }
+      })
+    })
+
+    res.status(201).json({
+      success: true,
+      message: 'Media uploaded successfully',
+      data: submission
+    })
+  } catch (err) {
+    console.error('uploadMedia error', err)
+    res.status(500).json({ error: 'Failed to upload media', details: err instanceof Error ? err.message : 'Unknown error' })
+  }
+}
+
 export const createMediaSubmission = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { mediaUrl, mediaType, caption } = req.body as any

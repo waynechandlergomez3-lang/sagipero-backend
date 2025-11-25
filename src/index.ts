@@ -79,6 +79,7 @@ const corsOptions = {
 };
 app.use(cors(corsOptions));
 app.use(express.json());
+app.use(express.urlencoded({ extended: true })); // Add support for form data
 
 // Request logging middleware
 app.use((req, _res, next) => {
@@ -192,8 +193,27 @@ app.get('/health', (_, res) => {
 import { ErrorRequestHandler } from 'express';
 
 const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
-  console.error(err.stack);
-  res.status(500).json({ error: 'Something went wrong!' });
+  console.error('Error:', err.message);
+  console.error('Stack:', err.stack);
+  
+  // Handle multer errors
+  if (err.name === 'MulterError') {
+    if (err.code === 'LIMIT_FILE_SIZE') {
+      res.status(400).json({ error: 'File too large' });
+      return;
+    }
+    if (err.code === 'LIMIT_FILE_COUNT') {
+      res.status(400).json({ error: 'Too many files' });
+      return;
+    }
+  }
+  
+  if (err.message === 'Invalid file type') {
+    res.status(400).json({ error: 'Invalid file type' });
+    return;
+  }
+  
+  res.status(500).json({ error: 'Something went wrong!', message: err.message });
 };
 
 app.use(errorHandler);

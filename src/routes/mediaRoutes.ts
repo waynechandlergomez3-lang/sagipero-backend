@@ -1,8 +1,38 @@
 import { Router } from 'express'
-import { createMediaSubmission, listMyMedia, listAllMedia, updateMediaStatus, deleteMediaSubmission, getMediaStats } from '../controllers/mediaController'
+import multer from 'multer'
+import path from 'path'
+import { createMediaSubmission, listMyMedia, listAllMedia, updateMediaStatus, deleteMediaSubmission, getMediaStats, uploadMedia } from '../controllers/mediaController'
 import { auth } from '../middleware/auth'
 
+// Configure multer for file uploads
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, 'uploads/')
+  },
+  filename: (req, file, cb) => {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9)
+    cb(null, file.fieldname + '-' + uniqueSuffix + path.extname(file.originalname))
+  }
+})
+
+const upload = multer({ 
+  storage,
+  limits: { fileSize: 50 * 1024 * 1024 }, // 50MB limit
+  fileFilter: (req, file, cb) => {
+    // Allow images and videos
+    const allowedMimes = ['image/jpeg', 'image/png', 'image/gif', 'video/mp4', 'video/quicktime']
+    if (allowedMimes.includes(file.mimetype)) {
+      cb(null, true)
+    } else {
+      cb(new Error('Invalid file type'))
+    }
+  }
+})
+
 const router = Router()
+
+// File upload endpoint
+router.post('/upload', auth, upload.single('media'), uploadMedia)
 
 // Public/authenticated routes for residents
 router.post('/', auth, createMediaSubmission)
