@@ -2,7 +2,7 @@ import { Router } from 'express'
 import multer from 'multer'
 import path from 'path'
 import fs from 'fs'
-import { createMediaSubmission, listMyMedia, listAllMedia, updateMediaStatus, deleteMediaSubmission, getMediaStats, uploadMedia } from '../controllers/mediaController'
+import { createMediaSubmission, listMyMedia, listAllMedia, updateMediaStatus, deleteMediaSubmission, getMediaStats, uploadMedia, verifyMediaAsEmergency } from '../controllers/mediaController'
 import { auth } from '../middleware/auth'
 
 // Ensure uploads directory exists (use absolute path to avoid issues with working directory)
@@ -50,5 +50,6 @@ router.delete('/:id', auth, deleteMediaSubmission)
 router.get('/admin/all', auth, listAllMedia)
 router.patch('/admin/:id/status', auth, updateMediaStatus)
 router.get('/admin/stats', auth, getMediaStats)
+router.post('/admin/verify', auth, verifyMediaAsEmergency)
 
 export default router

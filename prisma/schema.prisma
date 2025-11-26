@@ -202,22 +202,27 @@ model UserDocument {
 }
 
 model CitizenMedia {
-  id        String   @id
-  userId    String
-  mediaUrl  String
-  mediaType String   @default("photo")
-  caption   String?
-  status    String   @default("PENDING")
-  reviewedAt DateTime?
-  reviewedBy String?
-  notes     String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime
+  id            String   @id
+  userId        String
+  mediaUrl      String
+  mediaType     String   @default("photo")
+  caption       String?
+  status        String   @default("PENDING")
+  reviewedAt    DateTime?
+  reviewedBy    String?
+  notes         String?
+  emergencyType String?  // Type: FIRE, MEDICAL, POLICE, RESCUE, etc.
+  location      Json?    // { lat: number, lng: number }
+  locationLat   Float?
+  locationLng   Float?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime
 
-  User      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  User          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([status])
+  @@index([emergencyType])
   @@index([createdAt])
 }
 
