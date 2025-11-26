@@ -39,7 +39,7 @@ const upload = multer({
 const router = Router()
 
 // File upload endpoint
-router.post('/upload', auth, upload.single('media'), uploadMedia)
+router.post('/upload', auth, upload.single('file'), uploadMedia)
 
 // Public/authenticated routes for residents
 router.post('/', auth, createMediaSubmission)
