@@ -6,7 +6,6 @@ import pushStore from '../utils/pushStore';
 import push from '../utils/push';
 import { randomUUID } from 'crypto';
 import { rawDb } from '../services/rawDatabase';
-//force commit
 export const createEmergency = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     if (process.env.NODE_ENV !== 'production') {
@@ -686,6 +685,123 @@ export const acceptAssignment = async (req: AuthRequest, res: Response): Promise
   } catch (err) {
     console.error('Accept assignment error:', err);
     return res.status(500).json({ error: 'Failed to accept assignment' });
+  }
+}
+
+export const dispatchEmergency = async (req: AuthRequest, res: Response): Promise<Response | void> => {
+  try {
+    // Only admins can dispatch emergencies with vehicles
+    if (!req.user || req.user.role !== 'ADMIN') {
+      return res.status(403).json({ error: 'Forbidden - only admins can dispatch' });
+    }
+
+    const { emergencyId, responderId, vehicleIds } = req.body;
+    if (!emergencyId || !responderId) {
+      return res.status(400).json({ error: 'Missing emergencyId or responderId' });
+    }
+
+    // Ensure emergency exists and isn't resolved
+    const emergency = await db.withRetry(async (prisma) => 
+      prisma.emergency.findUnique({ where: { id: emergencyId } })
+    );
+    if (!emergency) return res.status(404).json({ error: 'Emergency not found' });
+    if (emergency.status === EmergencyStatus.RESOLVED) return res.status(400).json({ error: 'Emergency already resolved' });
+
+    // Verify responder exists and is available
+    const responder = await db.withRetry(async (prisma) => 
+      prisma.user.findUnique({ where: { id: responderId }, select: { responderStatus: true, responderTypes: true } })
+    );
+    if (!responder) return res.status(404).json({ error: 'Responder not found' });
+    if (responder.responderStatus !== 'AVAILABLE') {
+      return res.status(400).json({ error: 'Responder is not available' });
+    }
+
+    // Execute assignment + vehicle marking in transaction
+    const results = await db.withRetry(async (prisma) => {
+      return await prisma.$transaction(async (tx: any) => {
+        // 1. Assign responder and set emergency to IN_PROGRESS
+        const updatedEmergency = await tx.emergency.update({
+          where: { id: emergencyId },
+          data: {
+            responderId,
+            status: EmergencyStatus.IN_PROGRESS
+          },
+          include: {
+            User_Emergency_userIdToUser: true,
+            User_Emergency_responderIdToUser: true
+          }
+        });
+
+        // 2. Set responder to ON_DUTY
+        await tx.user.update({
+          where: { id: responderId },
+          data: { responderStatus: ResponderStatus.ON_DUTY }
+        });
+
+        // 3. Mark selected vehicles as inactive if provided
+        const dispatchedVehicles = [];
+        if (vehicleIds && Array.isArray(vehicleIds) && vehicleIds.length > 0) {
+          for (const vehicleId of vehicleIds) {
+            const updated = await tx.vehicle.update({
+              where: { id: vehicleId },
+              data: { active: false, updatedAt: new Date() }
+            });
+            dispatchedVehicles.push(updated);
+          }
+        }
+
+        return { updatedEmergency, dispatchedVehicles };
+      });
+    });
+
+    // Record dispatch history
+    try {
+      const dispatchPayload = {
+        responderId,
+        vehicleIds: vehicleIds || [],
+        dispatchedAt: new Date().toISOString(),
+        dispatchedBy: req.user.id
+      };
+      await db.withRetry(async (prisma) => 
+        prisma.$executeRaw`INSERT INTO public.emergency_history (emergency_id, event_type, payload) VALUES (${emergencyId}::uuid, 'DISPATCHED', ${JSON.stringify(dispatchPayload)}::jsonb)`
+      );
+    } catch(e) {
+      console.warn('Failed to record dispatch history', e);
+    }
+
+    // Emit dispatch events
+    try {
+      const { getIO } = require('../realtime');
+      const io = getIO();
+      
+      // Notify resident, responder, and admin
+      io.to(`user_${emergency.userId}`).emit('emergency:dispatched', {
+        emergencyId,
+        responderId,
+        vehicleCount: results.dispatchedVehicles.length
+      });
+      
+      if (responderId) {
+        io.to(`user_${responderId}`).emit('emergency:assigned', results.updatedEmergency);
+      }
+      
+      io.to('admin_channel').emit('emergency:dispatched', {
+        emergencyId,
+        responderId,
+        vehicleCount: results.dispatchedVehicles.length
+      });
+    } catch (err) {
+      console.warn('Failed to emit dispatch events', err);
+    }
+
+    return res.json({
+      status: 'dispatched',
+      emergency: results.updatedEmergency,
+      dispatchedVehicles: results.dispatchedVehicles
+    });
+  } catch (err) {
+    console.error('Dispatch emergency error:', err);
+    return res.status(500).json({ error: 'Failed to dispatch emergency' });
   }
 }
 

@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { Response } from 'express';
-import { createEmergency, listEmergencies, getLatestForUser, getEmergency, assignResponder, updateResponderLocation, listPendingForResponder, requestAssignment, resolveEmergency, getEmergencyHistory, getAllEmergenciesHistory, acceptAssignment, listFraudEmergencies, markFraud, unmarkFraud } from '../controllers/emergencyController';
+import { createEmergency, listEmergencies, getLatestForUser, getEmergency, assignResponder, updateResponderLocation, listPendingForResponder, requestAssignment, resolveEmergency, getEmergencyHistory, getAllEmergenciesHistory, acceptAssignment, listFraudEmergencies, markFraud, unmarkFraud, dispatchEmergency } from '../controllers/emergencyController';
 
 import { responderArrive } from '../controllers/emergencyController';
 import { auth } from '../middleware/auth';
@@ -26,6 +26,9 @@ router.get('/:id', auth, getEmergency);
 
 // Assign a responder to an emergency (admin or system)
 router.post('/assign', auth, [ body('emergencyId').notEmpty(), body('responderId').notEmpty() ], assignResponder);
+
+// Dispatch emergency with responder and vehicles (admin only)
+router.post('/dispatch', auth, [ body('emergencyId').notEmpty(), body('responderId').notEmpty() ], dispatchEmergency);
 
 // Responder posts location updates for an assigned emergency
 router.post('/responder/location', auth, [ body('emergencyId').notEmpty(), body('location').isObject() ], updateResponderLocation);
