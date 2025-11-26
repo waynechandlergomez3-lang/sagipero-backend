@@ -363,6 +363,27 @@ export const resolveEmergency = async (req: AuthRequest, res: Response): Promise
       }
     } catch (e) { console.warn('Failed to update responder status after resolve', e) }
 
+    // reactivate dispatched vehicles
+    try {
+      const dispatchHistory = await db.withRetry(async (prisma) =>
+        prisma.emergencyHistory.findFirst({
+          where: { emergencyId: emergency.id, eventType: 'DISPATCHED' }
+        })
+      );
+      if (dispatchHistory && dispatchHistory.payload && typeof dispatchHistory.payload === 'object') {
+        const payload = dispatchHistory.payload as any;
+        const vehicleIds = payload.vehicleIds || [];
+        if (Array.isArray(vehicleIds) && vehicleIds.length > 0) {
+          await db.withRetry(async (prisma) =>
+            prisma.vehicle.updateMany({
+              where: { id: { in: vehicleIds } },
+              data: { active: true, updatedAt: new Date() }
+            })
+          );
+        }
+      }
+    } catch (e) { console.warn('Failed to reactivate vehicles after resolve', e) }
+
     // record history
     try {
       await db.withRetry(async (prisma) => 
