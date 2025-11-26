@@ -168,31 +168,48 @@ class RawDatabaseService {
     const client = await this.pool.connect();
     try {
       let query = `
-        SELECT id, email, name, role, phone, address, barangay,
-               "specialCircumstances", "medicalConditions", allergies, "bloodType",
-               "emergencyContactName", "emergencyContactPhone", "emergencyContactRelation",
-               "responderStatus", "situationStatus", "responderTypes", "createdAt", "updatedAt"
-        FROM "User" 
+        SELECT u.id, u.email, u.name, u.role, u.phone, u.address, u.barangay,
+               u."specialCircumstances", u."medicalConditions", u.allergies, u."bloodType",
+               u."emergencyContactName", u."emergencyContactPhone", u."emergencyContactRelation",
+               u."responderStatus", u."situationStatus", u."responderTypes", u."createdAt", u."updatedAt",
+               l.id as "Location_id", l.latitude, l.longitude, l."updatedAt" as "Location_updatedAt"
+        FROM "User" u
+        LEFT JOIN "Location" l ON u.id = l."userId"
       `;
       
       const params: any[] = [];
       if (roleFilter && typeFilter) {
         // both filters: role must match and the responderTypes array must include the requested type
-        query += ` WHERE role = $1 AND ($2 = ANY("responderTypes"))`;
+        query += ` WHERE u.role = $1 AND ($2 = ANY(u."responderTypes"))`;
         params.push(roleFilter, typeFilter);
       } else if (roleFilter) {
-        query += ` WHERE role = $1`;
+        query += ` WHERE u.role = $1`;
         params.push(roleFilter);
       } else if (typeFilter) {
         // if only typeFilter is provided, return users (responders) that have the type
-        query += ` WHERE ($1 = ANY("responderTypes"))`;
+        query += ` WHERE ($1 = ANY(u."responderTypes"))`;
         params.push(typeFilter);
       }
       
-      query += ` ORDER BY "createdAt" DESC`;
+      query += ` ORDER BY u."createdAt" DESC`;
       
       const result = await client.query(query, params);
-      return result.rows;
+      
+      // Transform result to match expected format with nested Location object
+      const transformedRows = result.rows.map(row => {
+        const { Location_id, latitude, longitude, Location_updatedAt, ...userData } = row;
+        return {
+          ...userData,
+          Location: Location_id ? {
+            id: Location_id,
+            latitude,
+            longitude,
+            updatedAt: Location_updatedAt
+          } : null
+        };
+      });
+      
+      return transformedRows;
       
     } finally {
       client.release();
