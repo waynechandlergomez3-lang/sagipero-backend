@@ -1,5 +1,6 @@
 import { Router, Response } from 'express';
 import { signup, login, getProfile, updateProfile, updateSituationStatus, listUsers, updateUserById, deleteUserById, toggleResponderByAdmin, createUserByAdmin, getUserById } from '../controllers/userController';
+import { updateLocation } from '../controllers/locationController';
 import { db } from '../index';
 import { AuthRequest } from '../types/custom';
 import { auth } from '../middleware/auth';
@@ -85,6 +86,10 @@ router.post('/push-token', auth, async (req: AuthRequest, res: Response) => {
     return res.status(500).json({ error: 'Failed' });
   }
 });
+
+// Location sharing endpoints - both POST and PUT for client compatibility
+router.post('/location', auth, updateLocation);
+router.put('/location', auth, updateLocation);
 
 // Admin: update user
 router.put('/:id', auth, async (req: AuthRequest, res: Response) => {
