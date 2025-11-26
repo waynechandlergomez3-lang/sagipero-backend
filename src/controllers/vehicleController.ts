@@ -3,6 +3,18 @@ import { db } from '../services/database';
 import { AuthRequest } from '../types/custom';
 import { randomUUID } from 'crypto';
 
+// Generate meaningful vehicle ID: TYPE-YYYYMMDD-COUNTER
+const generateVehicleId = (vehicleType: string): string => {
+  const today = new Date();
+  const year = today.getFullYear();
+  const month = String(today.getMonth() + 1).padStart(2, '0');
+  const day = String(today.getDate()).padStart(2, '0');
+  const dateStr = `${year}${month}${day}`;
+  const typePrefix = (vehicleType || 'VEH').substring(0, 3).toUpperCase();
+  const counter = String(Math.floor(Math.random() * 1000)).padStart(3, '0');
+  return `${typePrefix}-${dateStr}-${counter}`;
+};
+
 export const listVehicles = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     // optional responder filter ?responderId=...
@@ -45,9 +57,12 @@ export const createVehicle = async (req: AuthRequest, res: Response): Promise<vo
       res.status(403).json({ error: 'Forbidden' }); return;
     }
 
+    // Generate meaningful ID based on vehicle type and date
+    const generatedId = generateVehicleId(model);
+
     const vehicle = await db.withRetry(async (client) => {
       return await client.vehicle.create({ data: {
-        id: randomUUID(), responderId: targetResponderId, plateNumber: plateNumber || null, model: model || null, color: color || null, active: active === undefined ? true : !!active, updatedAt: new Date()
+        id: generatedId, responderId: targetResponderId, plateNumber: plateNumber || null, model: model || null, color: color || null, active: active === undefined ? true : !!active, updatedAt: new Date()
       }});
     });
     res.status(201).json(vehicle);
