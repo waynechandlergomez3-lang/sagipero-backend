@@ -3,16 +3,18 @@ import { db } from '../services/database';
 import { AuthRequest } from '../types/custom';
 import { randomUUID } from 'crypto';
 
-// Generate meaningful vehicle ID: TYPE-YYYYMMDD-COUNTER
+// Generate meaningful vehicle ID: TYPE-YYYYMMDD-HHmmss-COUNTER
 const generateVehicleId = (vehicleType: string): string => {
-  const today = new Date();
-  const year = today.getFullYear();
-  const month = String(today.getMonth() + 1).padStart(2, '0');
-  const day = String(today.getDate()).padStart(2, '0');
-  const dateStr = `${year}${month}${day}`;
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  const hours = String(now.getHours()).padStart(2, '0');
+  const minutes = String(now.getMinutes()).padStart(2, '0');
+  const seconds = String(now.getSeconds()).padStart(2, '0');
   const typePrefix = (vehicleType || 'VEH').substring(0, 3).toUpperCase();
-  const counter = String(Math.floor(Math.random() * 1000)).padStart(3, '0');
-  return `${typePrefix}-${dateStr}-${counter}`;
+  const counter = String(Math.floor(Math.random() * 100)).padStart(2, '0');
+  return `${typePrefix}-${year}${month}${day}-${hours}${minutes}${seconds}-${counter}`;
 };
 
 export const listVehicles = async (req: AuthRequest, res: Response): Promise<void> => {
